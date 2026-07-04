@@ -10,7 +10,7 @@ covers: [16]
 
 The greenfield project skeleton EVERY other task builds on: a TypeScript package whose entry point is a single `incur` `Cli.create('picopilot', …)` with `.serve()`, wired so subcommand groups can be mounted later. It must build, test, lint/format, and expose incur's free surface (TOON output by default, `--json`/`--format`, `--llms`, MCP via `--mcp`, `skills add`/`mcp add`). Establish the package layout the prd names (`engine/` for codecs/adapters, the command layer), the test runner, and the format/lint tooling.
 
-Then REPLACE the placeholder `.dorfl.json` `verify` (currently a TODO string) with the real acceptance gate for this stack, cheap-first: `pnpm format:check && pnpm build && pnpm test` (adjust to the actual package-manager/scripts you set up), and set `prepare` to the install step (e.g. `pnpm install --frozen-lockfile`) now that a lockfile exists. Add one trivial command (e.g. a `version`/`hello` or the eventual `init` stub) so the CLI runs end-to-end and the gate has something to build+test.
+Then REPLACE the placeholder `.dorfl.json` `verify` (currently the trivially-passing seed `"true"`, in place so this very build is not vacuously red-gated on an empty repo) with the real acceptance gate for this stack, cheap-first: `pnpm format:check && pnpm build && pnpm test` (adjust to the actual package-manager/scripts you set up), and set `prepare` to the install step (e.g. `pnpm install --frozen-lockfile`) now that a lockfile exists. Add one trivial command (e.g. a `version`/`hello` or the eventual `init` stub) so the CLI runs end-to-end and the gate has something to build+test.
 
 This is a thin vertical: package manifest + build config + one runnable incur command + a passing test + the real `verify`/`prepare` gate.
 
@@ -18,7 +18,7 @@ This is a thin vertical: package manifest + build config + one runnable incur co
 
 - [ ] `npx picopilot --help` (or the built binary) runs and lists the incur built-ins (`skills add`, `mcp add`, `--llms`, `--mcp`, `--format`).
 - [ ] A minimal command runs end-to-end and returns a structured result in TOON by default, JSON under `--json`.
-- [ ] `.dorfl.json` `verify` is the real cheap-first gate (format → build → test), `prepare` is the install step, and running `verify` from a fresh `prepare`d tree is GREEN (no more TODO placeholder).
+- [ ] `.dorfl.json` `verify` is the real cheap-first gate (format → build → test), `prepare` is the install step, and running `verify` from a fresh `prepare`d tree is GREEN (replacing the `"true"` seed).
 - [ ] Package layout established for `engine/` (codecs/adapters) + a command layer, so later tasks mount groups without restructuring.
 - [ ] Tests cover the new behaviour (the runnable command's output/exit), mirroring an idiomatic TS test setup.
 
