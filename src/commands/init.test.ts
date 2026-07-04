@@ -6,7 +6,9 @@ import { Cli, z } from 'incur'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Cart } from '../engine/cart/index.js'
 import { readAllowMapOverlap } from '../engine/config/index.js'
+import type { InstallSkillsOptions, InstallSkillsResult } from '../engine/skills/index.js'
 import { createCli } from '../cli.js'
+import { type SkillsInstaller, registerInit } from './init.js'
 
 /**
  * Drives `picopilot init <dir>` through incur's `serve` DI, capturing stdout and
@@ -185,6 +187,119 @@ describe('picopilot init: shared-write isolation (default has no shared write)',
     expect(exitCode).not.toBe(0)
     // The pre-existing file is untouched.
     expect(readFileSync(existing, 'utf8')).toBe('MY WORK, do not clobber')
+  })
+
+  it('DEFAULT init calls NO installer (the shared write is opt-in only)', async () => {
+    // The regression guard for the isolation scoping: the shared-write path must
+    // be reachable ONLY via --install-skills. A default `init` must never invoke
+    // the installer, so a spy installer that fails the test if called proves it.
+    let called = false
+    const spy: SkillsInstaller = async () => {
+      called = true
+      return { paths: [], agents: [], skills: [] }
+    }
+    const { exitCode } = await runInitWith(['init', dir], spy)
+    expect(exitCode).toBe(0)
+    expect(called).toBe(false)
+  })
+})
+
+/**
+ * Builds a picopilot-shaped CLI whose `init` uses an INJECTED installer, then
+ * drives it through incur's `serve` DI. This is how the --install-skills tests
+ * exercise the opt-in shared write without ever performing a real global
+ * install: the injected installer redirects the target (or records the call).
+ */
+async function runInitWith(argv: string[], installer: SkillsInstaller) {
+  const cli = Cli.create('picopilot', { version: '0.0.0', description: 'test' })
+  registerInit(cli, installer)
+  let stdout = ''
+  let exitCode = 0
+  await cli.serve(argv, {
+    stdout(s) {
+      stdout += s
+    },
+    exit(code) {
+      exitCode = code
+    },
+    env: {},
+  })
+  return { stdout, exitCode }
+}
+
+describe('picopilot init --install-skills: the opt-in shared write', () => {
+  it('runs the installer and reports the installed skills + wired agents', async () => {
+    const calls: InstallSkillsOptions[] = []
+    const installer: SkillsInstaller = async (opts): Promise<InstallSkillsResult> => {
+      calls.push(opts)
+      return {
+        paths: [join(dir, '.agents', 'skills', 'picopilot-overview')],
+        agents: [{ agent: 'Claude Code', path: join(dir, '.claude', 'skills'), mode: 'symlink' }],
+        skills: ['picopilot-overview', 'picopilot-art'],
+      }
+    }
+
+    const { stdout, exitCode } = await runInitWith(
+      ['init', dir, '--install-skills', '--json'],
+      installer,
+    )
+    expect(exitCode).toBe(0)
+    // The installer WAS invoked (default is a GLOBAL install, so global=true).
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.global).toBe(true)
+
+    const out = JSON.parse(stdout) as {
+      installedSkills?: string[]
+      wiredAgents?: string[]
+      tips: string[]
+    }
+    expect(out.installedSkills).toEqual(['picopilot-overview', 'picopilot-art'])
+    expect(out.wiredAgents).toEqual(['Claude Code'])
+    // The scaffold still happened alongside the install.
+    expect(readdirSync(dir).sort()).toEqual(
+      ['AGENTS.md', 'main.lua', 'main.p8', 'picopilot.json'].sort(),
+    )
+  })
+
+  it('--no-global redirects the install into THIS project folder (the temp cart dir)', async () => {
+    const calls: InstallSkillsOptions[] = []
+    const installer: SkillsInstaller = async (opts) => {
+      calls.push(opts)
+      return { paths: [], agents: [], skills: ['picopilot-overview'] }
+    }
+    const { exitCode } = await runInitWith(
+      ['init', dir, '--install-skills', '--no-global'],
+      installer,
+    )
+    expect(exitCode).toBe(0)
+    // --no-global → project install; cwd is the scaffolded cart folder, so a
+    // project install can never escape to a shared dir.
+    expect(calls[0]?.global).toBe(false)
+    expect(calls[0]?.cwd).toBe(dir)
+  })
+
+  it('prints the manual/symlink FALLBACK when no agent was wired', async () => {
+    const installer: SkillsInstaller = async () => ({
+      paths: [join(dir, '.agents', 'skills', 'picopilot-overview')],
+      agents: [],
+      skills: ['picopilot-overview'],
+    })
+    const { stdout, exitCode } = await runInitWith(['init', dir, '--install-skills'], installer)
+    expect(exitCode).toBe(0)
+    // No known agent detected → tell the user how to wire it manually (symlink),
+    // the printed-instructions fallback for unsupported agents.
+    expect(stdout.toLowerCase()).toContain('symlink')
+  })
+
+  it('surfaces a STRUCTURED failure (nonzero) when the install fails, not a crash', async () => {
+    const installer: SkillsInstaller = async () => {
+      throw new Error('boom from incur')
+    }
+    const { stdout, exitCode } = await runInitWith(['init', dir, '--install-skills'], installer)
+    expect(exitCode).not.toBe(0)
+    // The scaffold still succeeded and the message points at the manual path.
+    expect(readdirSync(dir)).toContain('main.p8')
+    expect(stdout.toLowerCase()).toMatch(/skills add|symlink/)
   })
 })
 
