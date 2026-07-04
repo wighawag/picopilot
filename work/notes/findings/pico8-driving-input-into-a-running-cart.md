@@ -54,12 +54,13 @@ Besides the native `pico8 -x` path, there is a **web-export path**: `EXPORT cart
 
 | | Native (`pico8 -x`) | Web export (`EXPORT .html` + headless browser) |
 | --- | --- | --- |
+| Headless | GENUINELY headless — VERIFIED runs with `DISPLAY` unset, no window (the window-grab is `-run`/`-h` only, NOT `-x`) | genuinely headless |
 | Screenshot | `extcmd("screen")` cart-side + read PNG files | browser screenshots the canvas directly (no cart cooperation) |
 | Input | serial stdin `0x804` (byte stream) | GPIO 128-byte shared array + handshake (rich, documented) |
-| Headless | window-grab; needs `timeout`-kill + sentinel | GENUINELY headless (no window); fully scriptable |
-| Cost | user's PICO-8 binary only | + a headless browser + the HTML export step (+ export needs `pico8.dat`) |
+| Termination | stdout sentinel + `timeout` backstop (cart can't self-quit — NOT a window problem) | browser controls the lifecycle |
+| Cost | just the user's PICO-8 binary | + a headless browser + the HTML export step (+ export needs `pico8.dat`) |
 
-The web path is arguably CLEANER for automation (truly headless, browser-native screenshots, the documented GPIO channel) at the cost of an export step + a browser dependency. The native path is lighter-weight. **Decide at `run`-task time which architecture (or both) picopilot's run/test loop targets** — do NOT foreclose the web path (the initial "GPIO dead end" framing wrongly did). Both are viable and tested-in-principle.
+CORRECTED: an earlier version penalised the native path for a "window-grab" that does NOT exist for `-x` (verified headless with `DISPLAY` unset). So the native path is BOTH headless AND lighter (no browser/export). The web path's genuine advantages narrow to a RICHER input channel (128-byte GPIO shared array + handshake vs. a stdin byte-stream) and browser-native canvas screenshots (no cart-side `extcmd` cooperation). Native is the lighter default; web is worth it if the richer GPIO channel or browser-side capture is wanted. **Decide at `run`-task time which architecture (or both) picopilot's run/test loop targets** — do NOT foreclose the web path (the initial "GPIO dead end" framing wrongly did). Both are viable and tested-in-principle.
 
 ## What this means for picopilot (design)
 
