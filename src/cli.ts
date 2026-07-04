@@ -1,4 +1,5 @@
 import { Cli } from 'incur'
+import { registerInit } from './commands/init.js'
 import { registerVersion } from './commands/version.js'
 import { VERSION } from './version.js'
 
@@ -30,6 +31,7 @@ export function createCli(): Cli.Cli {
   })
 
   registerVersion(cli)
+  registerInit(cli)
 
   return cli
 }
