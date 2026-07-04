@@ -1,0 +1,3 @@
+tokens: 512 6%
+chars: 1840 2%
+compressed: 980 6%

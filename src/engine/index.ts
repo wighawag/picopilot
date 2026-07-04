@@ -16,3 +16,4 @@
  * Later tasks re-export from here without restructuring.
  */
 export * from './cart/index.js'
+export * from './shrinko/index.js'
