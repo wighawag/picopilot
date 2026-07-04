@@ -1,4 +1,5 @@
 import { Cli } from 'incur'
+import { registerGfx } from './commands/gfx.js'
 import { registerInit } from './commands/init.js'
 import { registerTokens } from './commands/tokens.js'
 import { registerVerify } from './commands/verify.js'
@@ -34,6 +35,7 @@ export function createCli(): Cli.Cli {
 
   registerVersion(cli)
   registerInit(cli)
+  registerGfx(cli)
   registerTokens(cli)
   registerVerify(cli)
 
