@@ -1,0 +1,6 @@
+{
+	"verify": "TODO: no code yet — the first build task must set this once package.json exists. Anticipated (TS/incur, cheap-first): pnpm format:check && pnpm build && pnpm test",
+	"harness": "pi",
+	"autoBuild": false,
+	"autoTask": false
+}
