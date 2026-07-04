@@ -42,3 +42,7 @@ The see-and-fix art loop's EDIT surface. Build `engine/gfx`, a shrinko-free TS c
 > Where to look: `engine/gfx` (new codec home); the cart model's `GfxSheet`/`spriteOrigin` for reading the target sprite's current pixels; incur's `error()` envelope for the structured refusal. This task OWNS the gfx module; the `gfx render` task extends it later, so keep the codec cleanly separable.
 >
 > Seams to test at: codec round-trip identity; every overlap branch, especially "refusal leaves the sprite's `__gfx__` bytes untouched" (the regression guard). Place test data by setting the 128-255 sprite's own pixels non-zero (NOT by writing text `__map__` rows — no sprite aliases those). Done = the agent can read a sprite, fix it, write it back, and can never silently clobber shared-region data. Record any refusal-code/exit-code choice you make in the done record.
+
+## Requeue 2026-07-04
+
+Re-scoped (fix b): overlap check inspects the target sprite's current __gfx__ shared-bank pixels (non-zero = data at risk), NOT __map__ (which holds only rows 0-31, so the old mapRowsForSprite/nonZeroTilesInRows composition could never fire). See the corrected task body + findings + ADR-0004.
