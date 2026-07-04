@@ -1,5 +1,6 @@
 import { Cli } from 'incur'
 import { registerInit } from './commands/init.js'
+import { registerTokens } from './commands/tokens.js'
 import { registerVersion } from './commands/version.js'
 import { VERSION } from './version.js'
 
@@ -32,6 +33,7 @@ export function createCli(): Cli.Cli {
 
   registerVersion(cli)
   registerInit(cli)
+  registerTokens(cli)
 
   return cli
 }
