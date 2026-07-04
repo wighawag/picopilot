@@ -1,0 +1,51 @@
+{
+  "name": "picopilot",
+  "version": "0.0.0",
+  "description": "An agent-first toolchain for PICO-8 game development, built on the incur CLI framework.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "bin": {
+    "picopilot": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "picopilot": "node --import tsx src/bin.ts"
+  },
+  "dependencies": {
+    "incur": "0.4.10"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.14",
+    "@types/node": "22.12.0",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
