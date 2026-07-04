@@ -41,9 +41,25 @@ end
 
 Host-side: `printf 'rrr' | pico8 -x cart.p8` (or a live stream). Combine with the screenshot-out loop (`extcmd("screen")`) to script an interactive playtest: "feed right×10 then jump, screenshot" → look at whether the player cleared the platform. **Fully automatable agent-driven gameplay testing — no human, no real keypresses.**
 
-## Channel 3 — GPIO (`0x5f80`-`0x5fff`): DEAD END on desktop
+## Channel 3 — GPIO (`0x5f80`-`0x5fff`): not native, but the RICH WEB-EXPORT channel (NOT a dead end)
 
-The 128 GPIO bytes are externally bridged only on **Raspberry Pi** (via WiringPi — it's in PICO-8's build credits) and **web exports** (via JS). On a plain x86 desktop there is no WiringPi hardware backend and no documented external writer: the region reads `0,0,0,0` and is just scratch memory. VERIFIED: a cart polling `peek(0x5f80..0x5f83)` saw all zero with nothing to write it externally. So GPIO is NOT the desktop input channel — **use serial stdin (`0x804`) instead.**
+CORRECTED (initial spike said "dead end" — that was too strong; it is a dead end for the NATIVE `pico8 -x` path only). The 128 GPIO bytes are externally bridged on: **Raspberry Pi** (WiringPi hardware), and **web exports** (`EXPORT foo.html`) where GPIO is a 128-byte array SHARED between the cart and the host JavaScript page (`var pico8_gpio = new Array(128)`), read/written by both sides.
+
+- **Native `pico8 -x` desktop: GPIO is inert** — no WiringPi backend, no external writer, reads `0,0,0,0` (VERIFIED). For the native headless path, use serial stdin (`0x804`) for input.
+- **Web export: GPIO is a full, documented, bidirectional protocol.** The community pattern (see BBS tid=40334, "multiplayer over GPIO", + benwiley4000/pico8-gpio-listener) uses byte 0 of GPIO as a comms handshake (cart pokes `0x5f80` to signal "data ready"; JS subscribes to GPIO changes and reads/writes the 128-byte buffer). Richer than a stdin byte-stream (a full 128-byte shared array with a handshake).
+
+### This opens a SECOND run/test architecture (a real design fork for `picopilot run`)
+
+Besides the native `pico8 -x` path, there is a **web-export path**: `EXPORT cart.html`, run it in a HEADLESS BROWSER (Playwright/Puppeteer), and drive it from JS. Trade-offs:
+
+| | Native (`pico8 -x`) | Web export (`EXPORT .html` + headless browser) |
+| --- | --- | --- |
+| Screenshot | `extcmd("screen")` cart-side + read PNG files | browser screenshots the canvas directly (no cart cooperation) |
+| Input | serial stdin `0x804` (byte stream) | GPIO 128-byte shared array + handshake (rich, documented) |
+| Headless | window-grab; needs `timeout`-kill + sentinel | GENUINELY headless (no window); fully scriptable |
+| Cost | user's PICO-8 binary only | + a headless browser + the HTML export step (+ export needs `pico8.dat`) |
+
+The web path is arguably CLEANER for automation (truly headless, browser-native screenshots, the documented GPIO channel) at the cost of an export step + a browser dependency. The native path is lighter-weight. **Decide at `run`-task time which architecture (or both) picopilot's run/test loop targets** — do NOT foreclose the web path (the initial "GPIO dead end" framing wrongly did). Both are viable and tested-in-principle.
 
 ## What this means for picopilot (design)
 
