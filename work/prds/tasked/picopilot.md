@@ -3,7 +3,9 @@ title: picopilot — an agent-first toolchain for PICO-8 game development
 slug: picopilot
 ---
 
-> Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks. (The technical-detail sections below are trimmed by `to-task` once the work is tasked — they move into tasks/ADRs and this prd settles to its durable framing: Problem / Solution / User Stories / Out of Scope.)
+> Launch snapshot — records intent at creation, NOT maintained. Current truth: `docs/adr/` (decisions) + the code; remaining work: `work/tasks/ready/` tasks.
+>
+> **TASKED 2026-07-04.** v1-core is decomposed into 8 tasks in `work/tasks/ready/` (`cli-skeleton-and-verify-gate`, `cart-model-and-p8-io`, `init-scaffold`, `gfx-grid-codec-show-set`, `gfx-render-png`, `shrinko-adapter-tokens`, `verify-static-gate`, `picopilot-skills`). v1-rest / v2 / v3 remain untasked (task after v1-core is proven). The durable *why* of the five grilled decisions moved to ADRs: shrinko shell-out (ADR-0001), two-tier structured failure (ADR-0002), static `picopilot verify` + gate-incapable (ADR-0003), gfx/map smart-refuse (ADR-0004), MML-only audio + spike-first (ADR-0005). The PICO-8 API reference + palette + memory map is `work/notes/findings/pico8-api-reference.md`. The Implementation/Testing Decisions below are the launch-time seed; the tasks + ADRs are now authoritative.
 
 ## Problem Statement
 
