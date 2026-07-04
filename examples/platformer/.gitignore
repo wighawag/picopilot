@@ -1,0 +1,3 @@
+# picopilot gfx render output (regenerable via `picopilot gfx render`).
+# The intentional tutorial images live in tutorial-assets/ and ARE committed.
+main-sprite-*.png

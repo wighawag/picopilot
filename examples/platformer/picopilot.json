@@ -1,0 +1,14 @@
+{
+  "$schema": "./picopilot.schema.json",
+  "commands": {
+    "gfx": {
+      "commands": {
+        "set": {
+          "options": {
+            "allowMapOverlap": false
+          }
+        }
+      }
+    }
+  }
+}
