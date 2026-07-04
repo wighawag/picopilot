@@ -1,9 +1,25 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { isAbsolute, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { Cli, z } from 'incur'
 
-import { Cart, CartParseError, GfxSheet, spriteAliasesMap } from '../engine/cart/index.js'
-import { decideOverlap, GfxGridError, gridToNibbles, nibblesToGrid } from '../engine/gfx/index.js'
+import {
+  Cart,
+  CartParseError,
+  GFX_WIDTH,
+  GfxSheet,
+  SPRITE_SIZE,
+  spriteAliasesMap,
+} from '../engine/cart/index.js'
+import {
+  decideOverlap,
+  GfxGridError,
+  gridToNibbles,
+  nibblesToGrid,
+  renderSheetPng,
+  renderSpritePng,
+  SHEET_RENDER_SCALE,
+  SPRITE_RENDER_SCALE,
+} from '../engine/gfx/index.js'
 
 /**
  * The exit code for the `map-overlap` refusal. Chosen as 1 (a plain failure),
@@ -19,6 +35,18 @@ export const MAP_OVERLAP_EXIT = 1
 /** Resolves a cart argument to an absolute path (relative to cwd). */
 function resolveCart(cart: string): string {
   return isAbsolute(cart) ? cart : resolve(process.cwd(), cart)
+}
+
+/**
+ * The default PNG output path for a `gfx render`: alongside the cart, named
+ * `<cart-stem>-sprite-<n>.png` or `<cart-stem>-sheet.png`. Predictable + stable
+ * so an agent can render → look → fix → re-render at the SAME path without
+ * juggling filenames.
+ */
+function defaultRenderPath(cartPath: string, target: 'sheet' | number): string {
+  const stem = basename(cartPath, extname(cartPath))
+  const suffix = target === 'sheet' ? 'sheet' : `sprite-${target}`
+  return join(dirname(cartPath), `${stem}-${suffix}.png`)
 }
 
 /**
@@ -48,9 +76,10 @@ function loadCart(
 }
 
 /**
- * Builds the `gfx` command group: `gfx show` (read a sprite as a char grid) and
+ * Builds the `gfx` command group: `gfx show` (read a sprite as a char grid),
  * `gfx set` (write a char grid back into `__gfx__`, with the map-overlap
- * smart-refuse). Returned as its own `Cli` so it mounts under the root as a
+ * smart-refuse), and `gfx render` (upscaled palette-accurate PNG, the JUDGE
+ * surface). Returned as its own `Cli` so it mounts under the root as a
  * group, which also gives the `gfx.set.options.allowMapOverlap` config path its
  * `picopilot.json` reads through (incur keys config by command path).
  */
@@ -238,6 +267,135 @@ function buildGfxGroup(): Cli.Cli {
     },
   })
 
+  gfx.command('render', {
+    description:
+      'Render a sprite (0-255) or the whole `sheet` to an UPSCALED, palette-accurate PNG a multimodal agent can LOOK at (the JUDGE surface). Always reports BOTH the PNG path AND the char grid. CTAs: render -> set -> render.',
+    args: z.object({
+      target: z
+        .string()
+        .describe(
+          'A sprite index 0-255 to render, or the literal `sheet` for the whole 128x128 spritesheet.',
+        ),
+      cart: z
+        .string()
+        .default('main.p8')
+        .describe('The .p8 cart to read. Defaults to main.p8 in the current folder.'),
+    }),
+    options: z.object({
+      out: z
+        .string()
+        .optional()
+        .describe(
+          'Output PNG path. Defaults to <cart-stem>-sprite-<n>.png / <cart-stem>-sheet.png next to the cart.',
+        ),
+    }),
+    output: z.object({
+      target: z.string().describe('What was rendered: a sprite index (as a string) or `sheet`.'),
+      png: z
+        .string()
+        .describe('The absolute path of the PNG written (the JUDGE surface: LOOK at it).'),
+      width: z.number().describe('The rendered PNG width in pixels (upscaled).'),
+      height: z.number().describe('The rendered PNG height in pixels (upscaled).'),
+      grid: z
+        .string()
+        .optional()
+        .describe(
+          'The sprite char grid (. = transparent, 0-f = colours) so a non-multimodal agent can reason over it; absent for `sheet`.',
+        ),
+      aliasesMap: z
+        .boolean()
+        .describe(
+          'True for a single sprite 128-255, which aliases the shared map region (see `gfx set`).',
+        ),
+    }),
+    examples: [
+      { description: 'Render sprite 1 to a viewable PNG', args: { target: '1' } },
+      { description: 'Render the whole spritesheet', args: { target: 'sheet' } },
+      {
+        description: 'Render sprite 3 of a specific cart to a chosen path',
+        args: { target: '3', cart: 'game.p8' },
+        options: { out: 'sprite3.png' },
+      },
+    ],
+    run({ args, options, error, ok }) {
+      // Parse the target: the literal `sheet` or a sprite index 0-255. A bad
+      // target is a caller error and never opens the cart.
+      const isSheet = args.target === 'sheet'
+      let sprite = -1
+      if (!isSheet) {
+        sprite = Number(args.target)
+        if (!Number.isInteger(sprite) || sprite < 0 || sprite > 255) {
+          return error({
+            code: 'invalid-target',
+            message: `render target must be \`sheet\` or a sprite index 0-255, got "${args.target}"`,
+            exitCode: 1,
+          })
+        }
+      }
+
+      const cartPath = resolveCart(args.cart)
+      const loaded = loadCart(cartPath)
+      if (!loaded.ok) {
+        return error({ code: loaded.code, message: loaded.message, exitCode: 1 })
+      }
+
+      const sheet = GfxSheet.fromBody(loaded.cart.getSection('gfx'))
+
+      // Render the palette-accurate, nearest-neighbour-upscaled PNG and write it
+      // to the known path. The encoder is shrinko-FREE (pure TS hex -> PNG).
+      const png = isSheet ? renderSheetPng(sheet) : renderSpritePng(sheet, sprite)
+      const outPath = options.out
+        ? resolveCart(options.out)
+        : defaultRenderPath(cartPath, isSheet ? 'sheet' : sprite)
+      writeFileSync(outPath, png)
+
+      // ALWAYS emit BOTH the PNG path and the grid (for a single sprite), so the
+      // picopilot-art skill can branch view-vs-imagine. A `sheet` render has no
+      // single 8x8 grid, so the grid is omitted there (use `gfx show <n>`).
+      const width = isSheet ? GFX_WIDTH * SHEET_RENDER_SCALE : SPRITE_SIZE * SPRITE_RENDER_SCALE
+      const height = width
+      const grid = isSheet ? undefined : nibblesToGrid(sheet.getSprite(sprite))
+      const aliasesMap = isSheet ? false : spriteAliasesMap(sprite)
+
+      // The see-and-fix loop: render (look) -> set (fix) -> render (re-look). A
+      // single sprite CTAs to `gfx set` then back to `gfx render` at the SAME
+      // target; `sheet` CTAs to `gfx show`/`gfx set` a specific sprite.
+      const cta = isSheet
+        ? {
+            description: 'To edit a specific sprite from the sheet, then re-render:',
+            commands: [
+              { command: 'gfx show <n>', description: 'Read sprite n as an editable char grid.' },
+              { command: 'gfx render sheet', description: 'Re-render the sheet to re-look.' },
+            ],
+          }
+        : {
+            description: 'Look at the PNG, then fix via the grid and re-render:',
+            commands: [
+              {
+                command: `gfx set ${sprite}`,
+                description: 'Write an edited char grid back into __gfx__.',
+              },
+              {
+                command: `gfx render ${sprite}`,
+                description: 'Re-render to re-look after the fix.',
+              },
+            ],
+          }
+
+      return ok(
+        {
+          target: isSheet ? 'sheet' : String(sprite),
+          png: outPath,
+          width,
+          height,
+          grid,
+          aliasesMap,
+        },
+        { cta },
+      )
+    },
+  })
+
   return gfx
 }
 
@@ -249,7 +407,9 @@ function buildGfxGroup(): Cli.Cli {
  * shrinko absent and never spawns a child process. `gfx set` carries the
  * gfx/map overlap smart-refuse (ADR-0004): a write to a shared-bank sprite
  * (128-255) whose current pixels hold data is refused unless authorised, so
- * picopilot never SILENTLY destroys shared-region data.
+ * picopilot never SILENTLY destroys shared-region data. `gfx render` is likewise
+ * shrinko-free: a pure-TS hex->PNG encoder using PICO-8's fixed 16-colour palette
+ * (the eyes-loop stays dependency-light, ADR/US #7).
  */
 export function registerGfx(cli: Cli.Cli): void {
   cli.command(buildGfxGroup())

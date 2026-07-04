@@ -1,13 +1,62 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { inflateSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { GfxSheet } from '../engine/cart/index.js'
 import { defaultConfigFile } from '../engine/config/index.js'
-import { nibblesToGrid } from '../engine/gfx/index.js'
+import { nibblesToGrid, PICO8_PALETTE } from '../engine/gfx/index.js'
 import { createCli } from '../cli.js'
+
+/** Decodes a PNG file into its raw RGB pixels (node's independent inflate). */
+function decodePngFile(path: string): {
+  width: number
+  height: number
+  pixel(x: number, y: number): [number, number, number]
+} {
+  const bytes = new Uint8Array(readFileSync(path))
+  let off = 8
+  let width = 0
+  let height = 0
+  const idatParts: Buffer[] = []
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  while (off < bytes.length) {
+    const len = view.getUint32(off)
+    const type = String.fromCharCode(
+      bytes[off + 4]!,
+      bytes[off + 5]!,
+      bytes[off + 6]!,
+      bytes[off + 7]!,
+    )
+    const data = bytes.subarray(off + 8, off + 8 + len)
+    if (type === 'IHDR') {
+      const dv = new DataView(data.buffer, data.byteOffset, data.byteLength)
+      width = dv.getUint32(0)
+      height = dv.getUint32(4)
+    } else if (type === 'IDAT') {
+      idatParts.push(Buffer.from(data))
+    }
+    off += 12 + len
+    if (type === 'IEND') break
+  }
+  const raw = new Uint8Array(inflateSync(Buffer.concat(idatParts)))
+  const stride = width * 3
+  return {
+    width,
+    height,
+    pixel(x, y) {
+      const base = y * (stride + 1) + 1 + x * 3
+      return [raw[base]!, raw[base + 1]!, raw[base + 2]!]
+    },
+  }
+}
+
+function rgbOf(index: number): [number, number, number] {
+  const c = PICO8_PALETTE[index]!
+  return [c.r, c.g, c.b]
+}
 
 /** A minimal valid cart with an empty (all-zero) __gfx__ section. */
 function cartText(gfxBody?: string): string {
@@ -249,6 +298,114 @@ describe('picopilot gfx set: input validation never touches the cart', () => {
       'set',
       '3',
       grid,
+      join(dir, 'nope.p8'),
+      '--json',
+    ])
+    expect(exitCode).not.toBe(0)
+    expect(JSON.parse(stdout).code).toBe('cart-not-found')
+  })
+})
+
+describe('picopilot gfx render: the JUDGE surface (upscaled palette-accurate PNG)', () => {
+  it('renders a sprite to an upscaled PNG with the CORRECT palette RGB per index', async () => {
+    // Paint sprite 5 so pixel (c, r) = index (r*8 + c) % 16 (every colour used).
+    const painted = makeGrid((r, c) => (r * 8 + c) % 16)
+    writeCartWithSprite(5, painted)
+
+    const { stdout, exitCode } = await runGfx(['gfx', 'render', '5', cartPath, '--json'])
+    expect(exitCode).toBe(0)
+    const out = JSON.parse(stdout)
+
+    // Reports the PNG path AND the grid (so the skill can pick view-vs-imagine).
+    expect(out.png).toContain('main-sprite-5.png')
+    expect(existsSync(out.png)).toBe(true)
+    expect(out.grid).toBe(nibblesToGrid(painted))
+    expect(out.target).toBe('5')
+    expect(out.width).toBe(256)
+    expect(out.height).toBe(256)
+
+    // Assert PIXEL BYTES: the centre of each 8x8-source block is that index's
+    // exact palette RGB (32x nearest-neighbour upscale).
+    const img = decodePngFile(out.png)
+    expect(img.width).toBe(256)
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const index = (r * 8 + c) % 16
+        expect(img.pixel(c * 32 + 16, r * 32 + 16)).toEqual(rgbOf(index))
+      }
+    }
+  })
+
+  it('renders the whole `sheet` similarly (256x256, palette-accurate)', async () => {
+    const sheet = GfxSheet.fromBody(undefined)
+    sheet.setSprite(
+      0,
+      makeGrid(() => 8),
+    ) // red top-left
+    sheet.setSprite(
+      255,
+      makeGrid(() => 10),
+    ) // yellow bottom-right
+    writeFileSync(cartPath, cartText(sheet.toBody()))
+
+    const { stdout, exitCode } = await runGfx(['gfx', 'render', 'sheet', cartPath, '--json'])
+    expect(exitCode).toBe(0)
+    const out = JSON.parse(stdout)
+    expect(out.target).toBe('sheet')
+    expect(out.png).toContain('main-sheet.png')
+    expect(out.grid).toBeUndefined() // a sheet has no single 8x8 grid
+    expect(out.width).toBe(256)
+
+    const img = decodePngFile(out.png)
+    expect(img.width).toBe(256)
+    expect(img.pixel(0, 0)).toEqual(rgbOf(8)) // sprite 0 top-left
+    expect(img.pixel(255, 255)).toEqual(rgbOf(10)) // sprite 255 bottom-right
+  })
+
+  it('wires the CTA loop render -> set -> render', async () => {
+    writeFileSync(cartPath, cartText())
+    const { stdout } = await runGfx(['gfx', 'render', '7', cartPath, '--json'])
+    const cta = JSON.stringify(JSON.parse(stdout).cta)
+    expect(cta).toContain('gfx set 7')
+    expect(cta).toContain('gfx render 7')
+  })
+
+  it('flags aliasesMap = true for a rendered 128-255 sprite', async () => {
+    writeFileSync(cartPath, cartText())
+    const { stdout } = await runGfx(['gfx', 'render', '200', cartPath, '--json'])
+    expect(JSON.parse(stdout).aliasesMap).toBe(true)
+  })
+
+  it('honours an explicit --out path', async () => {
+    writeFileSync(cartPath, cartText())
+    const outPath = join(dir, 'custom.png')
+    const { stdout, exitCode } = await runGfx([
+      'gfx',
+      'render',
+      '0',
+      cartPath,
+      '--out',
+      outPath,
+      '--json',
+    ])
+    expect(exitCode).toBe(0)
+    expect(JSON.parse(stdout).png).toBe(outPath)
+    expect(existsSync(outPath)).toBe(true)
+  })
+
+  it('rejects a bad target with a nonzero exit and writes no file', async () => {
+    writeFileSync(cartPath, cartText())
+    const { stdout, exitCode } = await runGfx(['gfx', 'render', 'nope', cartPath, '--json'])
+    expect(exitCode).not.toBe(0)
+    expect(JSON.parse(stdout).code).toBe('invalid-target')
+    expect(existsSync(join(dir, 'main-sprite-nope.png'))).toBe(false)
+  })
+
+  it('a missing cart is a distinct cart-not-found error', async () => {
+    const { stdout, exitCode } = await runGfx([
+      'gfx',
+      'render',
+      '0',
       join(dir, 'nope.p8'),
       '--json',
     ])
