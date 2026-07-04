@@ -1,4 +1,10 @@
+# environment variables
+.env*.local
+
+# node modules
 node_modules/
+
+# build output
 dist/
 *.tsbuildinfo
 coverage/
