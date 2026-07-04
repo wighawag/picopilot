@@ -3,10 +3,10 @@
  * grid) plus the gfx/map overlap smart-refuse decision.
  *
  * This module OWNS the char-grid representation (the "SVG for pixels" EDIT
- * surface) and the overlap safety logic; the `gfx show`/`gfx set` commands are
- * thin wiring over it, and the later `gfx render` task reuses the codec. It is
- * separable from the cart model (it only speaks nibble grids + strings) so it
- * round-trips in isolation.
+ * surface), the overlap safety logic, and the palette-accurate PNG render (the
+ * JUDGE surface). The `gfx show`/`gfx set`/`gfx render` commands are thin wiring
+ * over it. It is separable from the cart model (it only speaks nibble grids,
+ * strings, and RGB buffers) so it round-trips in isolation.
  */
 export {
   GRID_SIZE,
@@ -20,3 +20,17 @@ export {
   type OverlapDecision,
   spriteHasData,
 } from './overlap.js'
+export {
+  PICO8_PALETTE,
+  type PaletteColor,
+  paletteColor,
+} from './palette.js'
+export { encodePng, type RgbImage } from './png.js'
+export {
+  RENDER_TARGET_PX,
+  renderSheetPng,
+  renderSpritePng,
+  SHEET_RENDER_SCALE,
+  SPRITE_RENDER_SCALE,
+  upscale,
+} from './render.js'
