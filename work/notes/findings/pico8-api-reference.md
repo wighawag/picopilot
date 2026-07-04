@@ -69,7 +69,7 @@ The `gfx render` PNG encoder (US #7) maps each hex nibble in a char grid to exac
 0x6000  screen (8k)
 ```
 
-**gfx/map overlap (drives picopilot's smart-refuse, US #9 / Q4):** sprites 128..255 (`0x1000`-`0x1fff`) occupy the SAME memory as `__map__` rows 32..63. Writing sprite 130's pixels clobbers the map tiles stored there. `picopilot gfx set` inspects the overlapping `__map__` region and refuses (structured, nonzero, map bytes untouched) when real tiles are at risk and nothing authorised the loss.
+**gfx/map overlap (drives picopilot's smart-refuse, US #9 / Q4):** sprites 128..255 (`0x1000`-`0x1fff`) occupy the SAME memory as the shared map region (the map's rows 32..63). CRUCIAL SUBTLETY (corrected after the first build caught it): those shared bytes live IN the `0x1000` gfx bank, NOT in the text-format `.p8` `__map__` section. A `.p8`'s `__map__` section stores only map rows 0..31 (the non-shared half); the shared rows 32..63 are stored in the `__gfx__` upper bank (sprites 128..255). So "the map data at risk" when writing sprite 130 IS the sprite's own current `__gfx__` shared-bank pixels — there is no separate `__map__` text to inspect for the overlapping rows. `picopilot gfx set` therefore inspects the TARGET SPRITE'S CURRENT `__gfx__` bytes (are they non-zero — i.e. does the shared region already hold data?) and refuses (structured, nonzero, bytes untouched) when they are non-zero and nothing authorised the loss. (An earlier version of this doc wrongly said "inspect the overlapping `__map__` region"; that region is not in the `__map__` section, which is exactly the false premise the `gfx-grid-codec-show-set` build surfaced.)
 
 ## Cart section markers (text-format `.p8`)
 
