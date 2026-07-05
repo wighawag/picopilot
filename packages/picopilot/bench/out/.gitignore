@@ -1,0 +1,8 @@
+# game-jam benchmark run outputs are throwaway/regenerable by default.
+# Ignore everything here EXCEPT curated sample entries checked in on purpose.
+*
+!.gitignore
+!one-button/
+!one-button/**
+!one-button-run2/
+!one-button-run2/**

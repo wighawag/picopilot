@@ -12,7 +12,7 @@ FIRST read `main.lua`, `JAM.md`, and LOOK at the screenshots. If you can drive i
 
 Score the entry on this rubric. Each axis is 1-5 (1 = absent/broken, 3 = competent, 5 = excellent), with a one-sentence justification each:
 
-1. PLAYABLE (does it boot, respond to input, and have a goal/challenge/win-lose)? This is the gate axis; a 1-2 here caps the overall score. Ground it in the boot.json + the screenshots, not hope.
+1. PLAYABLE (does it boot, respond to input, and have a goal/challenge/win-lose)? This is the gate axis; a 1-2 here caps the overall score. Ground it in the boot.json + the screenshots, not hope. EXPLICITLY: can you SEE the player / the entity the player controls in the gameplay screenshots? An invisible player (e.g. `spr(n)` on an empty sprite) is a hard PLAYABLE failure regardless of how good the code looks. Check `bench-artifacts/playable.txt` (the automated invisible-player lint) and confirm against the screenshots.
 2. THEME FIT (does it clearly and interestingly interpret the theme, on whatever layer)?
 3. MECHANIC ORIGINALITY (is the core mechanic fresh / clever, vs. a generic clone)? Weight this HIGHEST: originality is what a jam rewards, and mechanics are where it usually lives.
 4. EXECUTION (given the time budget: is it coherent, controllable, not buggy; is the scope right for the time)?

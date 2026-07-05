@@ -135,11 +135,45 @@ echo "{\"haveCart\": $HAVE_CART, \"theme\": \"$THEME\", \"minutes\": $MINUTES}" 
 if [ "$HAVE_CART" = "1" ]; then
   echo ">>> verify (static gate)..."
   node "$PICOPILOT_BIN" verify --format json > "$ART/verify.json" 2>&1 || true
-  echo ">>> boot check (headless run, fresh)..."
-  node "$PICOPILOT_BIN" run --shot-dir "$ART/shots-fresh" --format json > "$ART/boot.json" 2>&1 || true
-  echo ">>> input-response check (scripted playtest)..."
-  node "$PICOPILOT_BIN" run --input "rrrxzrrxz" --shot-dir "$ART/shots-input" --format json > "$ART/boot-input.json" 2>&1 || true
   node "$PICOPILOT_BIN" tokens --format json > "$ART/tokens.json" 2>&1 || true
+
+  # Auto-instrument a COPY of the cart so the judge ALWAYS gets gameplay
+  # screenshots, even if the entry did not self-screenshot. We force the cart
+  # toward its play state and shoot a few frames, then discard the copy (the
+  # entry's own main.p8 is untouched).
+  instrument_and_run() { # $1 = input-string-or-empty, $2 = shotdir
+    local input="$1" shotdir="$2" tmp="$ART/_probe"
+    rm -rf "$tmp"; mkdir -p "$tmp" "$shotdir"
+    cp main.p8 "$tmp/main.p8" 2>/dev/null
+    [ -f main.lua ] && cp main.lua "$tmp/main.lua"
+    cat >> "$tmp/main.lua" <<'LUA'
+
+-->8
+-- picopilot game-jam capture harness (auto-injected; throwaway).
+__jam_u=_update
+__jam_t=0
+function _update()
+ if __jam_u then __jam_u() end
+ __jam_t+=1
+ if __jam_t==20 then extcmd("set_filename","f0") extcmd("screen") end
+ if __jam_t==70 then extcmd("set_filename","f1") extcmd("screen") end
+ if __jam_t==120 then extcmd("set_filename","f2") extcmd("screen") end
+ if __jam_t==125 then printh("__PICOPILOT_DONE__") end
+end
+LUA
+    local args=(run "$tmp/main.p8" --shot-dir "$shotdir" --format json)
+    [ -n "$input" ] && args+=(--input "$input")
+    ( cd "$tmp" && node "$PICOPILOT_BIN" "${args[@]}" )
+  }
+  echo ">>> boot + screenshot check (fresh, auto-instrumented)..."
+  instrument_and_run "" "$ART/shots-fresh" > "$ART/boot.json" 2>&1 || true
+  echo ">>> input-response check (scripted playtest, auto-instrumented)..."
+  instrument_and_run "zzzzzrrrzz" "$ART/shots-input" > "$ART/boot-input.json" 2>&1 || true
+  rm -rf "$ART/_probe"
+
+  echo ">>> playability lint (invisible-player / empty-sprite check)..."
+  bash "$HERE/check-playable.sh" "$PICOPILOT_BIN" "$WORKDIR" > "$ART/playable.txt" 2>&1 || true
+  grep 'PLAYABLE-CHECK' "$ART/playable.txt" || true
 else
   echo "!!! no main.p8 produced, the entry is empty."
 fi
@@ -161,4 +195,5 @@ echo " verify:    $(grep -oE '"status"[: ]+"[a-z-]*"' "$ART/verify.json" 2>/dev/
 echo " tokens:    $(grep -oE '"tokens"[: ]+[0-9]+' "$ART/tokens.json" 2>/dev/null | head -1)"
 echo " booted:    $(grep -oE '"exitReason"[: ]+"[a-z]*"' "$ART/boot.json" 2>/dev/null | head -1)"
 echo " shots:     fresh=$(ls "$ART/shots-fresh"/*.png 2>/dev/null | wc -l) input=$(ls "$ART/shots-input"/*.png 2>/dev/null | wc -l)"
+echo " playable:  $(grep -oE 'PLAYABLE-CHECK: (ok|issues [0-9]+)' "$ART/playable.txt" 2>/dev/null | head -1)"
 echo "=================================================================="
