@@ -1,7 +1,7 @@
 ---
 title: PICO-8 gotchas and footguns (the surprising behaviours that break LLM-written carts)
 slug: pico8-gotchas
-source: 'General PICO-8 knowledge, cross-checked against the official PICO-8 manual and confirmed LIVE against a local PICO-8 install on 2026-07-04: sin(0.25)=-1, cos(0.25)=0, 5/2=2.5, 5\2=2, -5\2=-3, and (true and false or 99)==99 all verified by running them.'
+source: 'General PICO-8 knowledge, cross-checked against the official PICO-8 manual and confirmed LIVE against a local PICO-8 install on 2026-07-04: sin(0.25)=-1, cos(0.25)=0, 5/2=2.5, 5\2=2, -5\2=-3, and (true and false or 99)==99 all verified by running them. The CLI-invocation footgun (section 0) was confirmed LIVE on PICO-8 v0.2.7 on 2026-07-05: `pico8 --help` and bare `pico8` both BLOCK (timeout, exit 124, no output), while `pico8 -x <cart> </dev/null` prints + exits cleanly; it bit two separate agents in one session.'
 ---
 
 # PICO-8 gotchas and footguns (for picopilot agent context)
@@ -9,6 +9,25 @@ source: 'General PICO-8 knowledge, cross-checked against the official PICO-8 man
 Verified external/domain ground truth: PICO-8 behaviours that DIVERGE from mainstream Lua / ordinary math, which an LLM (trained on standard Lua, JS, Python) reliably gets wrong. These are the traps that make a cart compile-and-run-but-behave-wrong. Companion to `pico8-api-reference.md` (what exists) and `pico8-idioms-and-patterns.md` (how to compose). Ordered roughly by how often they bite.
 
 Each entry: the surprising truth (one line), WHY an LLM gets it wrong, and a corrected snippet where useful.
+
+## 0. CLI FOOTGUN: `pico8 --help` / `--version` / bare `pico8` BLOCK (they launch the app, they do NOT print + exit)
+
+**This one hangs the AGENT, not the cart, and it has bitten two separate agents in this project already.** PICO-8 is a GUI app with no headless diagnostic mode: `pico8 --help`, `pico8 --version`, and bare `pico8` do NOT print text and exit like a normal CLI, they LAUNCH THE INTERACTIVE APP and block forever (VERIFIED on v0.2.7: `timeout 5 pico8 --help` exits 124 with zero output; same for bare `pico8`). An agent that runs `pico8 --help` to "see the flags" (or greps its help) stalls its own tool call indefinitely, which can stall a whole build/run.
+
+**Why LLMs get it wrong:** every other CLI answers `--help`/`--version` instantly; the agent assumes PICO-8 does too. It does not.
+
+**The rule:** NEVER invoke `pico8` bare or with `--help`/`--version`/interactive flags from an automated/agent context. The ONLY safe, non-blocking invocations are the automation ones, ALWAYS with stdin detached and a `timeout` backstop:
+
+```sh
+# headless run (prints printh to stdout, needs an external kill; see run finding)
+timeout --signal=KILL <secs> pico8 -x <cart.p8> </dev/null 2>&1
+# a trivial capability probe (does pico8 work at all?) via -x + a sentinel:
+#   cart _update(): printh("__OK__") stop()   then grep -m1 __OK__
+# offline exports (png/bin only; NOT wav, which SIGFPEs, see the wav finding):
+timeout <secs> pico8 <cart.p8> -export foo.p8.png </dev/null
+```
+
+There is NO way to list PICO-8's CLI flags by asking the binary; use the manual (`pico-8_manual.txt`, the "Command Line Parameters" section) instead of `pico8 --help`. If you need to know a flag, READ THE MANUAL, do not ask the binary.
 
 ## 1. `sin`/`cos` take TURNS (0..1), not radians, and `sin` is INVERTED (negated)
 

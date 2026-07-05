@@ -36,6 +36,21 @@ is absent, `run` returns a structured `pico8-not-found` result with a remedy
 (`set PICO8_PATH or install PICO-8`) and a nonzero exit, not a crash or a hang.
 Use the static `verify` loop while PICO-8 is unavailable; it never needs it.
 
+### NEVER run `pico8 --help` / `--version` / bare `pico8` (they BLOCK your tool call)
+
+PICO-8 is a GUI app with NO headless diagnostic mode. `pico8 --help`,
+`pico8 --version`, and bare `pico8` do NOT print text and exit like a normal
+CLI, they LAUNCH THE INTERACTIVE APP and hang forever (verified: `timeout 5
+pico8 --help` exits 124 with zero output). Running one from an agent/automation
+context STALLS your own tool call indefinitely (it has already bitten this
+project's agents more than once, hanging a whole build). Do NOT invoke `pico8`
+to "see its flags" or check it works. The only safe, non-blocking calls are the
+automation ones, ALWAYS with `</dev/null` + a `timeout` backstop:
+`pico8 -x <cart>`, `pico8 -run <cart>`, `pico8 <cart> -export foo.p8.png`. And
+prefer to let picopilot (`run`, `audio render`, etc.) shell out for you rather
+than calling `pico8` by hand. To learn a CLI flag, read the PICO-8 manual, never
+ask the binary.
+
 ### The cart must COOPERATE (the recipe `run` orchestrates)
 
 There is no "screenshot an arbitrary running cart" hook and a cart CANNOT quit
