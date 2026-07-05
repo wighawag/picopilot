@@ -56,3 +56,24 @@ export function mergeSfxRow(cart: Cart, slot: number, row: string): void {
 	const newBody = rows.length === 0 ? '' : rows.join(newline) + newline;
 	cart.setSection('sfx', newBody);
 }
+
+/**
+ * Replaces a cart's `__music__` section with a transpiled body, leaving every
+ * OTHER section (including `__sfx__`) BYTE-IDENTICAL, and commits it back through
+ * the cart model.
+ *
+ * Unlike `__sfx__` (where {@link mergeSfxRow} writes ONE slot), a `music
+ * from-patterns` call authors the WHOLE song at once (an ordered pattern list is
+ * the whole `__music__`), so this REPLACES the section wholesale rather than
+ * merging a single row. The body is the codec's output (one `FF CCCCCCCC` row per
+ * pattern); this only normalises its newline style to match the cart's existing
+ * `__music__`/dominant newline so the round-trip stays stable.
+ */
+export function setMusicSection(cart: Cart, body: string): void {
+	const existing = cart.getSection('music');
+	// Preserve the file's newline style: CRLF if the existing music section (or,
+	// absent, the codec body would already be \n) uses it. The codec emits \n.
+	const crlf = existing !== undefined && /\r\n/.test(existing);
+	const normalised = crlf ? body.replace(/\n/g, '\r\n') : body;
+	cart.setSection('music', normalised);
+}

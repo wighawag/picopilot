@@ -10,11 +10,11 @@ text you can reason about, then transpiles it into `__sfx__` / `__music__`.
 (See `picopilot-overview` for the `#include` discipline; never hand-write the
 audio hex sections.)
 
-> Scope note: `sfx from-mml` has LANDED (the picopilot-MML to `__sfx__`
-> transpiler). The remaining audio commands (`music from-patterns`,
-> `audio render`) are still v2 and land later. This skill carries the authoring
-> MODEL for all of them; if a command below is not yet available, that is
-> expected, and the model it describes is the DECIDED one.
+> Scope note: `sfx from-mml` (picopilot-MML to `__sfx__`) and
+> `music from-patterns` (the structural pattern-list to `__music__`) have both
+> LANDED. `audio render` is still v2 and lands later. This skill carries the
+> authoring MODEL for all of them; if a command below is not yet available, that
+> is expected, and the model it describes is the DECIDED one.
 
 ## Author in picopilot-MML (not ABC)
 
@@ -69,10 +69,41 @@ parses + in budget) and `audio render` (hear it).
 
 ## Music: `music from-patterns` (structural, not a notation)
 
-`__music__` is assembled STRUCTURALLY, not from a notation: `music from-patterns`
-takes an ordered list of up-to-4 SFX-channel references per pattern and writes
-`__music__`. So author each voice as an SFX in MML, then arrange those SFX
-references into patterns; you do not write music in a melodic notation.
+`__music__` is assembled STRUCTURALLY, not from a notation: `picopilot music
+from-patterns "<json>"` takes an ordered list of up-to-4 SFX-channel references
+per pattern and writes `__music__` (only `__music__` changes; every other
+section, including `__sfx__`, stays byte-identical). So author each voice as an
+SFX in MML, then arrange those SFX references into patterns; you do not write
+music in a melodic notation. The cart is the `--cart` option (default
+`main.p8`); pass a longer song with `--file`.
+
+### The pattern-list serialization (JSON)
+
+The pattern list is JSON: an array of patterns, each
+`{"channels":[c0,c1,c2,c3], "loopStart"?, "loopBack"?, "stop"?}`. Pattern order
+= song order. A channel is an SFX index `0-63` OR `null` = OFF (silent this
+pattern). `null` is NOT `sfx 0`: `null` sets the channel's bit6 (a silent
+channel); `0` is a real, playing SFX. Keep them distinct.
+
+The 3 pattern-flow flags (all optional, default false): `loopStart` (a
+`music`-loop-back searches back to the nearest of these, or pattern 0),
+`loopBack` (at this pattern's end, jump back to the loop-start pattern), `stop`
+(music stops after this pattern). They combine (e.g. loopStart + stop). A
+`loopBack` with NO `loopStart` anywhere is allowed but WARNS: PICO-8 falls back
+to pattern 0.
+
+Example: `[{"channels":[0,1,null,3],"loopStart":true},{"channels":[0,1,null,3],"loopBack":true}]`
+is a 2-pattern loop whose channel 2 is silent.
+
+### Pattern length is INHERITED from the SFX, not stored here
+
+There is NO per-pattern length in the music model. PICO-8 ends a pattern when its
+LEFT-MOST non-looping channel's SFX finishes, so pattern timing is inherited
+from the referenced SFX (its `speed` + LEN, set with `sfx from-mml` / the `{`
+LEN marker). To change how long a pattern plays, change the referenced SFX, not
+the music. An out-of-range SFX index (outside 0-63) is refused
+(`audio-music-sfx-out-of-range`, nonzero exit), never clamped. A merged song
+CTAs toward `verify` and `audio render`.
 
 ## Hear it: `audio render`
 
