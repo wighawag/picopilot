@@ -250,7 +250,7 @@ function buildSfxGroup(): Cli.Cli {
 							{
 								command: 'audio render',
 								description:
-									'Export a WAV to hear the result (requires PICO-8).',
+									'Record a WAV to hear the result (real-time capture, requires PICO-8).',
 							},
 						],
 					},
