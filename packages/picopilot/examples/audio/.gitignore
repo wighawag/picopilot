@@ -1,0 +1,8 @@
+# PICO-8 drops these into the launch cwd when `audio render`/`run` shell out to it.
+log.txt
+sdl_controllers.txt
+activity_log.txt
+
+# audio render / record WAV output (regenerable via `picopilot audio render`).
+out/
+*.wav

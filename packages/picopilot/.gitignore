@@ -10,3 +10,10 @@ sdl_controllers.txt
 backup/
 # only appears when the user's PICO-8 config has `record_activity_log 1`
 activity_log.txt
+# PICO-8 also materialises its data tree in the launch cwd when run from an
+# example folder (e.g. `audio render` in examples/audio); never commit these.
+bbs/
+carts/
+cdata/
+cstore/
+plates/
