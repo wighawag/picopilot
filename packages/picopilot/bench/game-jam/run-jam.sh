@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# picopilot game-jam benchmark harness.
+#
+# Gives a `pi` agent a THEME + a TIME BUDGET, drives it fully autonomously in a
+# turn-loop, STEERS it with "time remaining" reminders between turns (no
+# subagent tool, no interrupt: pure `pi` session continuation), and at the
+# deadline captures objective Tier-0/1 playability artifacts + runs a judge.
+#
+# Usage:
+#   ./run-jam.sh [--theme <t>] [--minutes <n>] [--model <m>] [--workdir <dir>] [--no-judge]
+#
+# Defaults: a random theme from themes.txt, 50 minutes, an isolated temp workdir.
+# Prints a results summary and leaves everything under the workdir.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PICOPILOT_BIN="$(cd "$HERE/../../dist" && pwd)/bin.js"
+
+THEME=""
+MINUTES=50
+MODEL=""
+WORKDIR=""
+DO_JUDGE=1
+# Steering thresholds: fractions of the budget ELAPSED at which to inject a
+# "time remaining" reminder between turns. Tuned to nudge toward a playable
+# slice early, then triage, then stop-polishing.
+STEER_AT_FRAC=(0.25 0.5 0.75 0.9 0.97)
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --theme) THEME="$2"; shift 2 ;;
+    --minutes) MINUTES="$2"; shift 2 ;;
+    --model) MODEL="$2"; shift 2 ;;
+    --workdir) WORKDIR="$2"; shift 2 ;;
+    --no-judge) DO_JUDGE=0; shift ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+command -v pi >/dev/null || { echo "FATAL: 'pi' not on PATH" >&2; exit 1; }
+[ -f "$PICOPILOT_BIN" ] || { echo "FATAL: picopilot not built ($PICOPILOT_BIN). Run pnpm build." >&2; exit 1; }
+
+# Pick a theme if not given.
+if [ -z "$THEME" ]; then
+  THEME="$(grep -vE '^\s*(#|$)' "$HERE/themes.txt" | shuf -n1)"
+fi
+
+# Workdir: an isolated scratch dir the agent builds in.
+if [ -z "$WORKDIR" ]; then
+  WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/picopilot-jam-XXXXXX")"
+fi
+mkdir -p "$WORKDIR/bench-artifacts"
+ART="$WORKDIR/bench-artifacts"
+
+SLUG="$(echo "$THEME" | tr ' A-Z' '-a-z' | tr -cd 'a-z0-9-')"
+SID="jam-${SLUG}-$(date +%s)"
+MODEL_ARGS=()
+[ -n "$MODEL" ] && MODEL_ARGS=(--model "$MODEL")
+
+echo "=================================================================="
+echo " picopilot GAME JAM  |  theme: '$THEME'  |  budget: ${MINUTES}m"
+echo " workdir: $WORKDIR"
+echo " session: $SID"
+echo "=================================================================="
+
+# Build the initial jam prompt (substitute theme / minutes / picopilot path).
+PROMPT="$(sed -e "s|__THEME__|$THEME|g" -e "s|__MINUTES__|$MINUTES|g" -e "s|__PICOPILOT__|$PICOPILOT_BIN|g" "$HERE/prompt.md")"
+
+START=$(date +%s)
+DEADLINE=$(( START + MINUTES * 60 ))
+mins_left() { echo $(( (DEADLINE - $(date +%s) + 59) / 60 )); }
+secs_left() { echo $(( DEADLINE - $(date +%s) )); }
+
+# The per-turn time budget for a single `pi` invocation. We cap each turn so the
+# harness regains control to steer + to enforce the deadline. The agent keeps
+# working across turns via session continuation.
+TURN_CAP_SECS=420   # 7 min max per turn (steer points are finer-grained than this via elapsed checks)
+
+# Session file locator (pi writes under ~/.pi/agent/sessions/<proj>/<ts>_<id>.jsonl).
+find_session() { grep -rl "$SID" "$HOME/.pi/agent/sessions/" 2>/dev/null | head -1; }
+
+run_turn() { # $1 = message; runs one bounded pi turn in the workdir
+  local msg="$1" sfile
+  sfile="$(find_session)"
+  ( cd "$WORKDIR"
+    if [ -z "$sfile" ]; then
+      timeout "$TURN_CAP_SECS" pi -p --session-id "$SID" "${MODEL_ARGS[@]}" --approve "$msg"
+    else
+      timeout "$TURN_CAP_SECS" pi -p --session "$sfile" "${MODEL_ARGS[@]}" --approve "$msg"
+    fi
+  ) 2>&1 | tail -40
+}
+
+# --- The jam loop: initial brief, then steer between turns until the deadline ---
+echo ">>> [t=0] launching the agent on the jam..."
+run_turn "$PROMPT"
+
+declare -A FIRED
+for frac in "${STEER_AT_FRAC[@]}"; do FIRED["$frac"]=0; done
+
+while [ "$(secs_left)" -gt 0 ]; do
+  elapsed=$(( $(date +%s) - START ))
+  frac_elapsed=$(awk "BEGIN{print $elapsed/($MINUTES*60)}")
+  # Find the next steer threshold we have crossed but not yet fired.
+  msg=""
+  for frac in "${STEER_AT_FRAC[@]}"; do
+    if [ "${FIRED[$frac]}" = "0" ] && awk "BEGIN{exit !($frac_elapsed >= $frac)}"; then
+      FIRED["$frac"]=1
+      ml=$(mins_left)
+      if awk "BEGIN{exit !($frac >= 0.9)}"; then
+        msg="TIME REMAINING: ~${ml} minute(s). STOP adding features NOW. Make sure main.p8 BOOTS and is PLAYABLE (responds to input, has a goal/win-lose). Run \`node $PICOPILOT_BIN verify\` and \`node $PICOPILOT_BIN run\` to confirm, then finalise JAM.md. A rough playable game scores; a broken one scores zero."
+      else
+        msg="TIME REMAINING: ~${ml} minute(s) of ${MINUTES}. Checkpoint: is main.p8 a PLAYABLE vertical slice right now? If not, cut scope and get there before polishing. Keep \`verify\` green."
+      fi
+      break
+    fi
+  done
+  if [ -n "$msg" ]; then
+    echo ">>> [t=${elapsed}s, ~$(mins_left)m left] STEERING the agent..."
+    run_turn "$msg"
+  else
+    # No new steer point; give the agent a plain continue turn to keep working.
+    echo ">>> [t=${elapsed}s, ~$(mins_left)m left] continue..."
+    run_turn "Keep going on the jam. ~$(mins_left) minute(s) left."
+  fi
+done
+
+echo ">>> [DEADLINE] time is up. Capturing the entry..."
+
+# --- Tier-0/1 objective capture (playability, automated) ---
+cd "$WORKDIR"
+HAVE_CART=0; [ -f main.p8 ] && HAVE_CART=1
+echo "{\"haveCart\": $HAVE_CART, \"theme\": \"$THEME\", \"minutes\": $MINUTES}" > "$ART/entry.json"
+
+if [ "$HAVE_CART" = "1" ]; then
+  echo ">>> verify (static gate)..."
+  node "$PICOPILOT_BIN" verify --format json > "$ART/verify.json" 2>&1 || true
+  echo ">>> boot check (headless run, fresh)..."
+  node "$PICOPILOT_BIN" run --shot-dir "$ART/shots-fresh" --format json > "$ART/boot.json" 2>&1 || true
+  echo ">>> input-response check (scripted playtest)..."
+  node "$PICOPILOT_BIN" run --input "rrrxzrrxz" --shot-dir "$ART/shots-input" --format json > "$ART/boot-input.json" 2>&1 || true
+  node "$PICOPILOT_BIN" tokens --format json > "$ART/tokens.json" 2>&1 || true
+else
+  echo "!!! no main.p8 produced, the entry is empty."
+fi
+
+# --- Tier-2 judge (subjective rubric, an independent pi agent) ---
+if [ "$DO_JUDGE" = "1" ] && [ "$HAVE_CART" = "1" ]; then
+  echo ">>> judging..."
+  JPROMPT="$(sed -e "s|__THEME__|$THEME|g" -e "s|__MINUTES__|$MINUTES|g" "$HERE/judge.md")"
+  ( cd "$WORKDIR"
+    timeout 600 pi -p --session-id "judge-$SID" "${MODEL_ARGS[@]}" --approve "$JPROMPT"
+  ) 2>&1 | tee "$ART/verdict.txt" | tail -60
+fi
+
+echo "=================================================================="
+echo " JAM COMPLETE  |  theme: '$THEME'"
+echo " entry:     $WORKDIR/main.p8   (JAM.md: $([ -f "$WORKDIR/JAM.md" ] && echo yes || echo MISSING))"
+echo " artifacts: $ART"
+echo " verify:    $(grep -oE '"status"[: ]+"[a-z-]*"' "$ART/verify.json" 2>/dev/null | head -1)"
+echo " tokens:    $(grep -oE '"tokens"[: ]+[0-9]+' "$ART/tokens.json" 2>/dev/null | head -1)"
+echo " booted:    $(grep -oE '"exitReason"[: ]+"[a-z]*"' "$ART/boot.json" 2>/dev/null | head -1)"
+echo " shots:     fresh=$(ls "$ART/shots-fresh"/*.png 2>/dev/null | wc -l) input=$(ls "$ART/shots-input"/*.png 2>/dev/null | wc -l)"
+echo "=================================================================="

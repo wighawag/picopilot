@@ -1,0 +1,31 @@
+# picopilot game-jam theme bank
+# One theme per line (blank lines + #-comments ignored). Deliberately GENERIC and
+# abstract, so they can be interpreted on multiple layers (graphics / mechanics /
+# story) and mechanical originality is where the interpretation should shine.
+# The harness picks one at random (or honours --theme).
+
+gravity
+loop
+growth
+reflection
+sacrifice
+one button
+hidden
+tether
+decay
+momentum
+echo
+overload
+shadow
+balance
+rewind
+swarm
+fragile
+magnetism
+tides
+the last one
+too many
+shrinking
+connection
+chain reaction
+opposites
