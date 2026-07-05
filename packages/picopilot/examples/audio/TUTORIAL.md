@@ -193,6 +193,10 @@ The first pass composed the SFX "blind" (no listening). Rendering + actually pla
 
 The lesson: compose, render, LISTEN, re-compose the pitch contour / structure. picopilot makes each turn cheap (one `sfx from-mml` line), but the judgement is yours and needs a real playback.
 
+### The boom hit a real tool limit (a genuine finding, not just skill)
+
+The boom was pushed to the CEILING of the current grammar: a steep descending pitch "crack" plus a hand-drawn volume DECAY envelope across rows (`v7 v7 v6 v5 v4 v3 v2 v1` on the `@6` noise). That is everything picopilot-MML can do, and it STILL reads as a descending zap, not an explosion. The reason is not composition skill: a real PICO-8 explosion needs the per-SFX FILTERS (DAMPEN for the low "body", REVERB for the resonant tail, NOIZ for the noise texture), and picopilot-MML v2 cannot express them (a conscious deferral in the audio spike, ADR-0005). Pitch and volume envelopes ARE expressible (so those are skill/tedium); the filters are NOT, so the whole class of "designed" sounds (explosion, pad, engine) is out of reach until they are added. This dogfood is exactly the "flag if a v2 use case demands them" trigger, recorded in `work/notes/observations/picopilot-mml-cannot-express-sfx-filters-limits-designed-sounds.md` and drafted as the `audio-mml-sfx-filters` task. It is a clean example of the ears loop earning its keep: the gap is invisible in the hex and only audible on playback.
+
 ## Rough edges found (the real payoff of dogfooding)
 
 - **`audio render` needs an interactive A/V session; it cannot capture from a headless/agent shell.** This is by design (ADR-0009: PICO-8's offline WAV export is broken, so we record a real-time run), and the command is honest about it (`captured:false` + a clear CTA). But it means the "hear it" rung of the loop is NOT reachable from CI or a non-interactive agent context - only from a real desktop session. The tutorial was authored headless, so the actual listening was done separately. A future option (captured as an idea) is a virtual A/V session (Xvfb + a PulseAudio null-sink) to make capture automatable.
