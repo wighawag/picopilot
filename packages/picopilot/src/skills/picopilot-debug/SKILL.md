@@ -24,14 +24,49 @@ envelope. It is STATIC and NEVER runs the cart, so:
 
 ## Then run it: `picopilot run`
 
-`picopilot run` launches PICO-8 headless, captures `printh` debug output and the
-exit state, and CTAs to `lint`/`tokens` on failure. Use `printh("...")` in your
-Lua as your trace: it prints to host stdout, which `run` captures for you.
+`picopilot run <cart>` launches PICO-8 headless (`pico8 -x`), streams stdout,
+ENDS the run the moment the cart prints a done-sentinel, and collects one
+structured result: the screenshot PNG paths, the captured `printh` stdout, and
+the exit reason (`sentinel` / `timeout` / `exit`). Read the screenshots to SEE
+the running game; read printh for text traces. On a backstop `timeout` it CTAs
+you to `verify`/`tokens` to catch a code fault.
 
 `run` requires PICO-8 (a licensed, paid binary with no pip/npm path). If PICO-8
 is absent, `run` returns a structured `pico8-not-found` result with a remedy
 (`set PICO8_PATH or install PICO-8`) and a nonzero exit, not a crash or a hang.
 Use the static `verify` loop while PICO-8 is unavailable; it never needs it.
+
+### The cart must COOPERATE (the recipe `run` orchestrates)
+
+There is no "screenshot an arbitrary running cart" hook and a cart CANNOT quit
+the PICO-8 app itself (`extcmd("shutdown")` works only in EXPORTED binaries).
+So the cart takes its own screenshots and signals when it is done, and `run`
+does the watch + kill + collect. Add these debug lines to the cart, run, then
+remove them:
+
+```lua
+-- screenshot on a frame timer (the verb is "screen", NOT "screenshot")
+if t==20 then extcmd("set_filename","frame_0") extcmd("screen") end
+if t==40 then extcmd("set_filename","frame_1") extcmd("screen") end
+-- signal done so run kills PICO-8 promptly (it can't self-quit)
+if t==45 then printh("__PICOPILOT_DONE__") end
+```
+
+Load-bearing details (each an easy wrong guess, all tested):
+
+- The screenshot verb is **`extcmd("screen")`**. `extcmd("screenshot")` ERRORS
+  ("unknown extcmd"). `extcmd("set_filename","frame_0")` before it names the next
+  shot deterministically (so you can read `frame_0.png`, `frame_1.png`, ... in
+  order and PERCEIVE MOTION by comparing frames).
+- The done-sentinel is the default `__PICOPILOT_DONE__` on its OWN line via
+  `printh`. `run` kills PICO-8 the instant it matches, so the run lasts exactly
+  as long as the cart's logic needs, no blind wait. `--sentinel` changes it.
+- A cart that never prints the sentinel is killed by the backstop
+  (`--backstop-ms`, default 15000) and reported as `exitReason: timeout`.
+- `-x` IS genuinely headless (runs with no display); the external kill is needed
+  only because a cart cannot self-quit, NOT because of a window.
+- Screenshots go to a run-controlled dir (`--shot-dir`, default an isolated temp
+  dir), never `~/Desktop`.
 
 ## The two structured boundaries
 

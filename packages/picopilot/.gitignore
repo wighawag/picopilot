@@ -2,3 +2,9 @@ dist/
 node_modules/
 *.tsbuildinfo
 coverage/
+
+# PICO-8 writes these into the launch cwd when `picopilot run` shells out to it
+# during a live (opt-in) run; never commit them.
+log.txt
+sdl_controllers.txt
+backup/
