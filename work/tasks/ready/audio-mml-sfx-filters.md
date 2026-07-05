@@ -44,3 +44,7 @@ This has a SPIKE-FIRST rung, because the exact filter byte layout is not yet ful
 > Seam to test at: table-driven codec tests (known filter directive -> known `__sfx__` header bytes, per the spike) + the byte-identical merge (note rows + other sections untouched) + a level-out-of-range refusal. Pure TS. Done = an agent can author an explosion with `!dampen !reverb` (or the chosen syntax) and it sounds like one; the audio example's boom is re-authored to prove it.
 >
 > RECORD non-obvious decisions in a `## Decisions` block (the filter syntax chosen + why it avoids collisions, the header-byte layout found, level encoding, refusal codes). The filter byte layout is a genuine new finding; if any syntax/encoding choice clears the ADR bar (`ADR-FORMAT.md`), write it up.
+
+## Requeue 2026-07-05
+
+Predecessor run hung on the pico8 --help CLI footgun (now warned in the task prompt + pico8-gotchas + picopilot-debug skill). No branch was produced; re-drive fresh.
