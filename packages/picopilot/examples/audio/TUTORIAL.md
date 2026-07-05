@@ -24,18 +24,26 @@ picopilot init          # scaffold main.p8 (+ main.lua, AGENTS.md, picopilot.jso
 Each SFX is one MML string -> one slot (`0..63`); only that slot changes, every other section stays byte-identical. Modal attributes (`@` waveform, `v` volume, `e` effect, `o` octave, `s` speed) are sticky.
 
 ```sh
-# SFX 0 - coin pickup: a fast rising blip (tilted-saw @1, quick two-step up)
-picopilot sfx from-mml 0 "s6 @1 v6 o3 e c > e"
+# SFX 0 - coin pickup: a snappy 3-note rising blip (tilted-saw @1)
+picopilot sfx from-mml 0 "s5 @1 v6 o3 e g > c"
 
 # SFX 1 - jump: an upward slide (saw @2, slide effect e1 across a rising arpeggio)
 picopilot sfx from-mml 1 "s4 @2 v6 e1 o2 c e g > c"
 
-# SFX 2 - hurt: a harsh downward drop (noise @6, drop effect e3)
-picopilot sfx from-mml 2 "s5 @6 v7 e3 o3 d o2 a f"
+# SFX 2 - hurt: a sharp downward drop (noise @6, drop effect e3, high -> low)
+picopilot sfx from-mml 2 "s5 @6 v7 e3 o3 g o2 c o1 g"
 
-# SFX 3 - boom: noise with a fade-out tail (noise @6, fade-out e5, held low)
-picopilot sfx from-mml 3 "s8 @6 v7 e5 o1 c c c c c c c c"
+# SFX 3 - boom: a DESCENDING noise sweep with a fade-out (noise @6, fade-out e5)
+picopilot sfx from-mml 3 "s7 @6 v7 e5 o3 e c o2 g e c o1 g c"
 ```
+
+A tuning note worth its own callout (from actually LISTENING, Step 6): the first
+boom was 8 identical low noise rows and sounded like a MACHINE GUN, not an
+explosion. The fix is a strictly DESCENDING pitch sweep (`o3 e c o2 g e c o1 g
+c`, high falling to low) so the noise "falls" like a real boom. Same idea for the
+hurt: start high and drop. This is the ears loop doing its job: you cannot hear a
+rattle-vs-boom problem in the hex, only by rendering and listening, then
+re-composing the pitch contour.
 
 Each call reports `rows`, `speed`, the `__sfx__` hex row, any rounding `warnings`, and a CTA toward `verify` + `audio render`. Reading one back: `sfx from-mml 0` printed
 
@@ -56,21 +64,25 @@ The picopilot-MML I actually used, mapped to intent:
 Music in PICO-8 holds NO melody: the melody lives in SFX, and `__music__` just references them. So author each voice as an SFX first:
 
 ```sh
-# SFX 4 - bass line (organ @5, low octave, 16 rows)
-picopilot sfx from-mml 4 "s12 @5 v5 o1 c2 c2 g2 g2 a2 a2 f2 f2"
+# SFX 4 - walking bass (organ @5, low octave). l2 = every note is 2 rows, so
+# 8 notes = exactly 16 rows (matching the melodies).
+picopilot sfx from-mml 4 "s12 @5 v5 l2 o1 c e g a > c < b g e"
 
-# SFX 5 - melody (triangle @0, 16 rows over the same 16-row span)
-picopilot sfx from-mml 5 "s12 @0 v6 o3 c e g e c e g e f a > c < a f a > c < a"
+# SFX 5 - melody A (triangle @0, 16 rows): a rising-then-falling phrase
+picopilot sfx from-mml 5 "s12 @0 v6 o3 c e g > c < b g e c d f a > d < c a f d"
+
+# SFX 6 - melody B (triangle @0, 16 rows): a CONTRASTING answer phrase
+picopilot sfx from-mml 6 "s12 @0 v6 o3 e g > c e < b > d < g b a > c < f a e g c e"
 ```
 
-Both are `s12` and 16 rows, so they line up. Note `c2` here means "the note C held for 2 ROWS" (the tracker-rows reframe), which is how the bass gets its half-time feel against the melody.
+All are `s12`, and the bass is exactly 16 rows via `l2` (default length 2 rows), so they line up. Getting the bass to exactly 16 rows is a good illustration of the tracker-rows reframe: my first tries came out 15 and 18 rows because each `2`-length note adds 2 rows and I was counting by ear like note values; setting `l2` and giving 8 notes (8 x 2 = 16) is the clean way.
 
-Then arrange them structurally as a 2-pattern loop:
+Then arrange them as a 2-pattern A/B loop (the anti-repetition fix, see Step 6): pattern 0 plays melody A over the bass, pattern 1 plays melody B over the same bass, then loops.
 
 ```sh
 picopilot music from-patterns '[
   {"channels":[4,5,null,null],"loopStart":true},
-  {"channels":[4,5,null,null],"loopBack":true}
+  {"channels":[4,6,null,null],"loopBack":true}
 ]'
 ```
 
@@ -78,10 +90,10 @@ This wrote `__music__`:
 
 ```
 01 04054040
-02 04054040
+02 04064040
 ```
 
-Reading it against the finding: each row is `FF CCCCCCCC` = flag byte + 4 channel bytes. `01` = loop-start, `02` = loop-back; channels `04 05 40 40` = sfx 4, sfx 5, and two OFF channels (`40` = bit6 set). Crucial subtlety the skill flags: `null` (OFF) is NOT `sfx 0` - `null` becomes byte `40`, a real sfx 0 would be `00`. The two patterns form a loop (loop-start on the first, loop-back on the second).
+Reading it against the finding: each row is `FF CCCCCCCC` = flag byte + 4 channel bytes. `01` = loop-start, `02` = loop-back; channels `04 05 40 40` = sfx 4 (bass), sfx 5 (melody A), and two OFF channels (`40` = bit6 set); the second pattern swaps melody A -> melody B (`...06...`). Crucial subtlety the skill flags: `null` (OFF) is NOT `sfx 0` - `null` becomes byte `40`, a real sfx 0 would be `00`. The two patterns form an A/B loop (loop-start on the first, loop-back on the second).
 
 ## Step 3 - The refusals are loud and actionable (not silent clamps)
 
@@ -108,14 +120,20 @@ Each refusal's CTA tells you the fix (transpose; or split across SFX slots). Thi
 The audio is data; `main.lua` just triggers it so opening the cart in PICO-8 lets you hear each sound:
 
 ```lua
-function _init() music(0) end            -- start the bass+melody loop
+function _init() music(0) end            -- start the A/B bass+melody loop
 function _update()
   if btnp(4) then sfx(0) end             -- z -> coin
   if btnp(5) then sfx(1) end             -- x -> jump
   if btnp(2) then sfx(2) end             -- up -> hurt
   if btnp(3) then sfx(3) end             -- down -> boom
+  if btnp(0) then                        -- left -> pause / resume the music
+    playing = not playing
+    if playing then music(0) else music(-1) end
+  end
 end
 ```
+
+One honest PICO-8 limit here: `music(-1)` STOPS the music and `music(0)` restarts it from the TOP (pattern 0). PICO-8 has no native "pause here, resume from the same spot" - so left is really stop/restart, not a true pause. Good enough for a demo, but worth knowing.
 
 ## Step 5 - The static gate (`verify`, `tokens`, `lint`)
 
@@ -163,6 +181,18 @@ Compose each sound as one MML string (`sfx from-mml`), reading back `rows`/`spee
 - `verify`/`tokens`/`lint` all green; the cart boots under `run`.
 - `audio render` / `audio record` / `run --record-audio` all wired correctly and degraded HONESTLY (`captured:false` + CTA) when there was no A/V session, and returned the structured `pico8-not-found` when PICO-8 was absent.
 
+## Tuning by ear (the iterate step - you cannot skip it)
+
+The first pass composed the SFX "blind" (no listening). Rendering + actually playing the cart surfaced exactly what you would expect the ears loop to catch, and nothing the hex could have told you:
+
+- **coin**: ok-ish -> made it a snappier 3-note rise.
+- **jump**: great as-is (the `e1` slide sells it).
+- **hurt**: ok -> started it higher so the drop has further to fall.
+- **boom**: sounded like a MACHINE GUN (8 identical low noise rows) -> recomposed as a strictly descending pitch sweep so it FALLS like an explosion.
+- **music**: too repetitive (both patterns identical) -> split into an A/B structure (melody A, then a contrasting melody B) over a walking bass.
+
+The lesson: compose, render, LISTEN, re-compose the pitch contour / structure. picopilot makes each turn cheap (one `sfx from-mml` line), but the judgement is yours and needs a real playback.
+
 ## Rough edges found (the real payoff of dogfooding)
 
 - **`audio render` needs an interactive A/V session; it cannot capture from a headless/agent shell.** This is by design (ADR-0009: PICO-8's offline WAV export is broken, so we record a real-time run), and the command is honest about it (`captured:false` + a clear CTA). But it means the "hear it" rung of the loop is NOT reachable from CI or a non-interactive agent context - only from a real desktop session. The tutorial was authored headless, so the actual listening was done separately. A future option (captured as an idea) is a virtual A/V session (Xvfb + a PulseAudio null-sink) to make capture automatable.
@@ -170,6 +200,8 @@ Compose each sound as one MML string (`sfx from-mml`), reading back `rows`/`spee
 - **A plain audio-demo cart has no `run` screenshot.** `run` captures screenshots only when the CART cooperates (`extcmd("screen")`); a pure "press a key to hear a sound" demo does not, so `run` boots it and hits the timeout backstop with no shot. Expected, but a first-timer might read the backstop CTA as a fault.
 - **PICO-8 drops `log.txt` (and, with `record_activity_log`, `activity_log.txt`) into the launch cwd** when `audio render`/`run` shell out to it. These are gitignored (as in the `rogue` example).
 - **The record window for a `--pattern`/whole-song target is a fixed default (8s), not derived.** PICO-8 stores no per-pattern length and following loop flags statically is out of scope, so for music you override with `--seconds` to capture exactly one loop. Only `--sfx` targets get an exact auto-window (from speed + rows).
+- **No true music pause/resume.** `music(-1)` stops and `music(0)` restarts from pattern 0; PICO-8 has no "resume from the current spot", so the demo's left button is stop/restart, not a real pause. Not a picopilot thing, a PICO-8 one.
+- **Getting an SFX to an EXACT row count is fiddly by ear** (the tracker-rows reframe): `l<N>` + a fixed note count is the reliable way to hit exactly 16 rows, rather than counting each `2`-length note. The bass took two tries (15, then 18 rows) before `l2` + 8 notes landed it at 16.
 
 ## Extensions to try (drive the agent for each)
 - Add a custom-instrument SFX: author SFX 0..7 as an instrument, then reference it from another SFX with `@8`..`@f`.
