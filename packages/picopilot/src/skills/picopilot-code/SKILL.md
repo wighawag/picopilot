@@ -48,3 +48,50 @@ explicit opt-in.
 run. A green verify is well-formed, not proven-to-run, so it points you at
 `picopilot run`. With shrinko absent, verify is `gate-incapable` (never green),
 because it cannot check token bloat, the failure this loop exists to catch.
+
+## PICO-8 gotchas that break carts silently
+
+These are NOT token issues; they are behaviours that differ from mainstream Lua
+/ math and make a cart compile-and-run-but-behave-wrong. The ones models get
+wrong most:
+
+- `sin(t)`/`cos(t)` take TURNS (0..1), not radians, and `sin` is INVERTED for
+  screen space (+y is down). A full circle is `t: 0->1`. Do not multiply by
+  `2*pi`; do not re-negate `sin`.
+- `/` does NOT truncate (`5/2` is `2.5`). Integer divide is `\` (`5\2` is `2`),
+  which floors toward negative infinity (`-5\2` is `-3`).
+- `rnd(x)` returns a FLOAT in `[0,x)`. Wrap with `flr` for an integer
+  (`flr(rnd(6))` is 0..5). `rnd(table)` returns a random element.
+- Tables are 1-BASED. `del(t,val)` removes by VALUE; `deli(t,i)` removes by
+  INDEX. Deleting the current item inside `foreach` is safe; deleting inside an
+  ascending `for i=1,#t` loop ERRORS once the list shrinks (iterate descending).
+- Draw state PERSISTS across frames: `camera`, `pal`, `palt`, `clip`, `color`,
+  `fillp` stay set until you reset them (no-arg form: `camera()`, `pal()`).
+  Reset before drawing the HUD or offsets/palette swaps leak.
+- Variables are GLOBAL unless declared `local`. The `x = cond and a or b` ternary
+  returns `b` when `a` is falsy; use an explicit `if` when `a` can be `false`/`nil`.
+
+## Data-as-split-strings (a top token-saver)
+
+`split"a,b,c"` turns a comma string into a 1-based array in one cheap token.
+Declare frames, hitboxes, direction lookups, and whole level rows this way
+instead of table literals. `unpack(split"...")` spreads it as a vararg (e.g.
+`poke(addr, unpack(split"..."))` writes a byte blob in one call). Prefer it for
+any homogeneous list.
+
+## Genre code references (load the one you need)
+
+The right STRUCTURE differs by game type: a platformer's gravity + per-axis
+collision is nothing like a grid puzzle's transactional tile-step or a shooter's
+entity swarm. When you start building a specific genre, load the matching file
+from this skill's `reference/` folder (see `reference/README.md` for the index):
+
+- `reference/platformer.md`: gravity/jump, per-axis tile collision, camera follow.
+- `reference/puzzle-grid.md`: grid state, discrete tile-step moves, rule passes.
+- `reference/twin-stick-arcade.md`: many entities, spawn/despawn at scale, juice.
+- `reference/top-down-adventure.md`: tiled world, 4-dir movement, tile interaction.
+- `reference/mode7-racing.md`: pseudo-3D `tline` floor projection, driving.
+- `reference/rpg-menus-dialog.md`: UI state stack, cursor menus, timed text reveal.
+
+Each carries a minimal idiomatic implementation and a genre-pitfalls checklist.
+Adapt them to your game.

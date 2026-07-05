@@ -138,6 +138,20 @@ describe('picopilot init: AGENTS.md carries the curated PICO-8 reference', () =>
 		expect(agents).toContain('printh');
 	});
 
+	it('carries the silent-gotcha section (turns-not-radians, integer divide, draw-state persists)', () => {
+		// sin/cos take turns and sin is inverted (the #1 math trap).
+		expect(agents).toContain('TURNS');
+		expect(agents.toLowerCase()).toContain('inverted');
+		// Integer divide is backslash, not `/`.
+		expect(agents).toContain('5\\2');
+		// Draw state persists across frames.
+		expect(agents.toLowerCase()).toContain('persists');
+		// del-by-value vs deli-by-index.
+		expect(agents).toContain('deli(');
+		// Points the agent at the code skill's genre references.
+		expect(agents).toContain('picopilot-code');
+	});
+
 	it('carries the token discipline (8192 budget + shorthands)', () => {
 		expect(agents).toContain('8192');
 		expect(agents).toContain('picopilot tokens');
@@ -279,6 +293,35 @@ describe('picopilot init --install-skills: the opt-in shared write', () => {
 		expect(readdirSync(dir).sort()).toEqual(
 			['AGENTS.md', 'main.lua', 'main.p8', 'picopilot.json'].sort(),
 		);
+	});
+
+	it('DEDUPES wiredAgents (incur returns one entry per skill x agent)', async () => {
+		// incur's install.agents has one entry per (skill, agent) symlink, so a
+		// multi-skill install repeats each agent name (see
+		// work/notes/observations/incur-install-agents-duplicated-per-skill.md).
+		// wiredAgents is the SET of agent names, so it must collapse duplicates.
+		const installer: SkillsInstaller = async () => ({
+			paths: [
+				join(dir, '.agents', 'skills', 'picopilot-overview'),
+				join(dir, '.agents', 'skills', 'picopilot-code'),
+			],
+			// Two skills x two agents = four entries, agent names repeated.
+			agents: [
+				{agent: 'Claude Code', path: join(dir, 'a1'), mode: 'symlink'},
+				{agent: 'Kilo', path: join(dir, 'a2'), mode: 'symlink'},
+				{agent: 'Claude Code', path: join(dir, 'a3'), mode: 'symlink'},
+				{agent: 'Kilo', path: join(dir, 'a4'), mode: 'symlink'},
+			],
+			skills: ['picopilot-overview', 'picopilot-code'],
+		});
+		const {stdout, exitCode} = await runInitWith(
+			['init', dir, '--install-skills', '--json'],
+			installer,
+		);
+		expect(exitCode).toBe(0);
+		const out = JSON.parse(stdout) as {wiredAgents?: string[]};
+		// Deduped to the unique set, order preserved.
+		expect(out.wiredAgents).toEqual(['Claude Code', 'Kilo']);
 	});
 
 	it('--no-global redirects the install into THIS project folder (the temp cart dir)', async () => {

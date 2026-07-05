@@ -168,7 +168,11 @@ export function registerInit(
 			// was detected, the canonical `.agents/skills` install still happened (the
 			// universal-agent path), but a specific agent may not read it, so tell the
 			// user how to wire it manually rather than pretending every agent is set.
-			const wiredAgents = install.agents.map((a) => a.agent);
+			// Dedup: incur's install.agents has one entry per (skill, agent) symlink
+			// (see work/notes/observations/incur-install-agents-duplicated-per-skill.md),
+			// so N skills x M agents yields N*M entries. wiredAgents is the SET of
+			// agent names, so collapse duplicates here (order-preserving).
+			const wiredAgents = [...new Set(install.agents.map((a) => a.agent))];
 			const fallbackTip =
 				wiredAgents.length === 0
 					? `Installed to ${install.paths[0] ?? '.agents/skills'}. No known agent skill dir was detected to wire directly; if your agent does not auto-discover .agents/skills, symlink these skills into its skills dir.`

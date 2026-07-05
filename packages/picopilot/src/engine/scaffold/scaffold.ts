@@ -168,6 +168,31 @@ in \`picopilot.json\`), so you never silently destroy map data you cannot see.
 - **Cart data:** \`cartdata(id)\`, \`dget(i)\`, \`dset(i,v)\`.
 - **Debug:** \`printh(str)\` (to host stdout, \`picopilot run\` captures it), \`stat(n)\`.
 
+## Gotchas that silently break carts (these differ from normal Lua/math)
+
+These compile and run but behave WRONG. They are the traps models hit most:
+
+- \`sin(t)\`/\`cos(t)\` take TURNS (0..1), NOT radians, and \`sin\` is INVERTED for
+  screen space (+y is down). A full circle is \`t: 0->1\`. Do not multiply by
+  \`2*pi\`; do not re-negate \`sin\`.
+- \`/\` does NOT truncate (\`5/2\`=\`2.5\`). Integer divide is \`\\\` (\`5\\2\`=\`2\`), which
+  floors toward negative infinity (\`-5\\2\`=\`-3\`).
+- \`rnd(x)\` returns a FLOAT in [0,x). Use \`flr(rnd(x))\` for an integer;
+  \`rnd(table)\` returns a random element.
+- Tables are 1-BASED. \`del(t,val)\` removes by VALUE, \`deli(t,i)\` by INDEX.
+  Deleting the current item inside \`foreach\` is safe; inside an ascending
+  \`for i=1,#t\` it ERRORS once the list shrinks (iterate descending, or foreach).
+- Draw state PERSISTS across frames: \`camera\`, \`pal\`, \`palt\`, \`clip\`, \`color\`,
+  \`fillp\` stay set until reset (no-arg form: \`camera()\`, \`pal()\`). Reset before
+  the HUD or offsets/palette swaps leak.
+- Numbers are 16.16 fixed point; overflow WRAPS at ~32767. Drawing coords are
+  floored to integer pixels (keep true position as a float, let draw floor it).
+- Variables are GLOBAL unless \`local\`. The \`x = cond and a or b\` ternary returns
+  \`b\` when \`a\` is falsy (\`false\`/\`nil\`); use an explicit \`if\` then.
+
+(The \`picopilot-code\` skill expands these, and carries per-genre code references:
+platformer / puzzle-grid / twin-stick-arcade / top-down-adventure and more.)
+
 ## Token discipline (stay under 8192)
 
 Models blow the budget by writing verbose Lua. Prefer PICO-8 shorthands:

@@ -229,4 +229,75 @@ describe('picopilot skills: isolated --install-skills (the load-bearing shared-w
 			execFileSync('rm', ['-rf', source]);
 		}
 	});
+
+	it('ships skill RESOURCE files, not just SKILL.md (incur 0.4.10 workaround)', async () => {
+		// incur's SyncSkills.sync copies only SKILL.md; installSkills backfills the
+		// sibling resources. The genre code references under
+		// picopilot-code/reference/ must reach the installed skill dir, or the
+		// SKILL.md's on-demand pointers dangle.
+		await installSkills({cli: createCli(), global: false, cwd: target});
+
+		const codeSkill = join(target, '.agents', 'skills', 'picopilot-code');
+		expect(existsSync(join(codeSkill, 'SKILL.md'))).toBe(true);
+		for (const res of [
+			'reference/README.md',
+			'reference/platformer.md',
+			'reference/puzzle-grid.md',
+			'reference/twin-stick-arcade.md',
+			'reference/top-down-adventure.md',
+			'reference/mode7-racing.md',
+			'reference/rpg-menus-dialog.md',
+		]) {
+			expect(existsSync(join(codeSkill, res))).toBe(true);
+		}
+		// The resource content is the authored source byte-for-byte (a real copy).
+		expect(
+			readFileSync(join(codeSkill, 'reference/platformer.md'), 'utf8'),
+		).toBe(
+			readFileSync(
+				join(skillsSourceDir(), 'picopilot-code', 'reference/platformer.md'),
+				'utf8',
+			),
+		);
+		// The real dirs stay untouched (resource copy respects isolation).
+		for (const dir of REAL_DIRS) {
+			expect(snapshot(dir)).toEqual(before.get(dir));
+		}
+	});
+
+	it('copies arbitrary nested resources from a custom source, isolated', async () => {
+		// A fixture skill with a nested resource proves the copy is general (not
+		// hard-coded to picopilot-code) and stays inside the temp target.
+		const source = mkdtempSync(join(tmpdir(), 'picopilot-skills-src-'));
+		try {
+			const skillDir = join(source, 'picopilot-fixture');
+			execFileSync('mkdir', ['-p', join(skillDir, 'reference', 'deep')]);
+			execFileSync('sh', [
+				'-c',
+				`printf '%s\n' '---' 'name: picopilot-fixture' 'description: A fixture skill.' '---' '# fixture' > ${JSON.stringify(join(skillDir, 'SKILL.md'))}`,
+			]);
+			execFileSync('sh', [
+				'-c',
+				`printf 'RES' > ${JSON.stringify(join(skillDir, 'reference', 'deep', 'note.md'))}`,
+			]);
+
+			await installSkills({
+				cli: createCli(),
+				global: false,
+				cwd: target,
+				sourceDir: source,
+			});
+
+			const installed = join(target, '.agents', 'skills', 'picopilot-fixture');
+			expect(existsSync(join(installed, 'SKILL.md'))).toBe(true);
+			expect(
+				readFileSync(join(installed, 'reference', 'deep', 'note.md'), 'utf8'),
+			).toBe('RES');
+			for (const dir of REAL_DIRS) {
+				expect(snapshot(dir)).toEqual(before.get(dir));
+			}
+		} finally {
+			execFileSync('rm', ['-rf', source]);
+		}
+	});
 });

@@ -1,5 +1,5 @@
-import {existsSync} from 'node:fs';
-import {dirname, join} from 'node:path';
+import {cpSync, existsSync, readdirSync} from 'node:fs';
+import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Cli, SyncSkills} from 'incur';
 
@@ -142,6 +142,23 @@ export async function installSkills(
 		include: [join(source, '*')],
 	});
 
+	// Ship skill RESOURCE files (everything a skill dir carries besides SKILL.md).
+	// incur 0.4.10's SyncSkills.sync copies ONLY SKILL.md and drops sibling files
+	// (see work/notes/observations/incur-syncskills-drops-skill-resource-files.md),
+	// so genre code references under e.g. `picopilot-code/reference/` would never
+	// reach the installed skill. We backfill them here: for each installed skill
+	// path (canonical + each wired agent), copy the matching source skill's
+	// non-SKILL.md contents in. This stays inside the already-isolated installSkills
+	// seam, so the shared-write isolation test still governs it, and it becomes a
+	// no-op (safe to delete) once incur copies full skill dirs.
+	const installPaths = [...result.paths, ...result.agents.map((a) => a.path)];
+	for (const installedSkillDir of installPaths) {
+		copySkillResources(
+			join(source, basename(installedSkillDir)),
+			installedSkillDir,
+		);
+	}
+
 	return {
 		paths: result.paths,
 		agents: result.agents.map((a) => ({
@@ -151,4 +168,27 @@ export async function installSkills(
 		})),
 		skills: result.skills.map((s) => s.name),
 	};
+}
+
+/**
+ * Copies a source skill directory's RESOURCE files (everything except SKILL.md)
+ * into an already-installed skill directory. This is the workaround for incur
+ * 0.4.10 shipping only SKILL.md (see the observation referenced in installSkills):
+ * SKILL.md is left to incur (it is already written and may be transformed), and
+ * only the sibling resources are backfilled, recursively, preserving structure.
+ *
+ * Both the source skill and any resources are optional: a skill with no resource
+ * files, or a source dir that does not exist (a command-generated skill with no
+ * authored source), is a silent no-op. Nothing here reaches outside `destDir`,
+ * which is one of the install paths SyncSkills already chose, so it inherits the
+ * shared-write isolation of installSkills (tests redirect those paths to a temp).
+ */
+function copySkillResources(sourceSkillDir: string, destDir: string): void {
+	if (!existsSync(sourceSkillDir) || !existsSync(destDir)) return;
+	for (const entry of readdirSync(sourceSkillDir)) {
+		if (entry === 'SKILL.md') continue; // incur owns the manifest; do not clobber it
+		cpSync(join(sourceSkillDir, entry), join(destDir, entry), {
+			recursive: true,
+		});
+	}
 }
