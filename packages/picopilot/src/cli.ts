@@ -4,6 +4,7 @@ import {registerInit} from './commands/init.js';
 import {registerLint} from './commands/lint.js';
 import {registerMinify} from './commands/minify.js';
 import {registerRun} from './commands/run.js';
+import {registerSfx} from './commands/sfx.js';
 import {registerTokens} from './commands/tokens.js';
 import {registerVerify} from './commands/verify.js';
 import {registerVersion} from './commands/version.js';
@@ -44,6 +45,7 @@ export function createCli(): Cli.Cli {
 	registerMinify(cli);
 	registerVerify(cli);
 	registerRun(cli);
+	registerSfx(cli);
 
 	return cli;
 }
