@@ -8,3 +8,5 @@ coverage/
 log.txt
 sdl_controllers.txt
 backup/
+# only appears when the user's PICO-8 config has `record_activity_log 1`
+activity_log.txt
