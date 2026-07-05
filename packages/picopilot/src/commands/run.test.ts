@@ -6,7 +6,9 @@ import {Cli} from 'incur';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import type {
 	Pico8Adapter,
+	Pico8RecordResult,
 	Pico8Result,
+	RecordOptions,
 	RunOptions,
 } from '../engine/pico8/index.js';
 import {pico8NotFound} from '../engine/pico8/index.js';
@@ -41,12 +43,26 @@ afterEach(() => {
  */
 function stubAdapter(
 	result: Pico8Result,
-	seen?: {options?: RunOptions},
+	seen?: {options?: RunOptions; recordOptions?: RecordOptions},
+	recordResult?: Pico8RecordResult,
 ): Pico8Adapter {
 	return {
 		async run(options) {
 			if (seen !== undefined) seen.options = options;
 			return result;
+		},
+		async record(options) {
+			if (seen !== undefined) seen.recordOptions = options;
+			return (
+				recordResult ?? {
+					ok: true,
+					value: {
+						wavPath: undefined,
+						printh: '',
+						exitReason: 'sentinel',
+					},
+				}
+			);
 		},
 	};
 }
@@ -153,6 +169,39 @@ describe('picopilot run: shotDir isolation (never ~/Desktop)', () => {
 		);
 		expect(seen.options?.shotDir).toBe(chosen);
 		expect(existsSync(chosen)).toBe(true); // created if missing
+	});
+});
+
+describe('picopilot run: --record-audio (additive WAV capture, ADR-0009)', () => {
+	it('collects a WAV alongside the screenshots when --record-audio is set', async () => {
+		const seen: {options?: RunOptions; recordOptions?: RecordOptions} = {};
+		const wav = join(dir, 'run.wav');
+		writeFileSync(wav, 'x');
+		const {stdout, exitCode} = await runRun(
+			() =>
+				stubAdapter(ranWith('sentinel'), seen, {
+					ok: true,
+					value: {wavPath: wav, printh: '', exitReason: 'sentinel'},
+				}),
+			['run', cartPath, '--record-audio', '--json'],
+		);
+		expect(exitCode).toBe(0);
+		const out = JSON.parse(stdout);
+		// The WAV is an ADDITIVE artifact next to the existing screenshot envelope.
+		expect(out.wav).toBe(wav);
+		expect(out.audioCaptured).toBe(true);
+		expect(Array.isArray(out.screenshots)).toBe(true);
+		// The record pass got a real A/V request into the SAME isolated shotDir.
+		expect(seen.recordOptions?.wavDir).toBe(seen.options?.shotDir);
+	});
+
+	it('is additive: without the flag no record pass runs (audioCaptured false)', async () => {
+		const seen: {options?: RunOptions; recordOptions?: RecordOptions} = {};
+		const {stdout} = await runRun(() => stubAdapter(ranWith('sentinel'), seen));
+		const out = JSON.parse(stdout);
+		expect(out.audioCaptured).toBe(false);
+		expect(out.wav).toBeUndefined();
+		expect(seen.recordOptions).toBeUndefined(); // record() never called
 	});
 });
 

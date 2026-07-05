@@ -74,15 +74,17 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 		expect(md).toContain('allowMapOverlap');
 	});
 
-	it('picopilot-audio carries the picopilot-MML authoring model (and scopes the v2 commands)', () => {
+	it('picopilot-audio carries the picopilot-MML authoring model + the honest record-based render framing', () => {
 		const md = readSkill('picopilot-audio');
 		expect(md).toContain('picopilot-MML');
 		// ABC is explicitly NOT used.
 		expect(md).toContain('ABC');
 		// Music is assembled structurally from SFX references.
 		expect(md.toLowerCase()).toContain('structural');
-		// Honest scoping: the audio commands are v2 / land later.
-		expect(md.toLowerCase()).toContain('v2');
+		// Honest scoping (ADR-0009): audio-to-WAV is a RECORDING, NOT an offline
+		// export, and needs a real audio session (a developer machine).
+		expect(md.toLowerCase()).toContain('recording');
+		expect(md.toLowerCase()).toContain('offline export');
 	});
 
 	it('picopilot-debug carries the static-gate + run loop and the dependency boundaries', () => {

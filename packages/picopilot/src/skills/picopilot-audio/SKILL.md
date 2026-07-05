@@ -39,15 +39,38 @@ This is the audio analogue of the `picopilot-art` render/look/set eyes loop:
 
 1. `picopilot sfx from-mml <slot> "<mml>"`: compose one sound as text.
 2. `picopilot music from-patterns "<json>"`: arrange SFX into a song.
-3. `picopilot audio render`: export a WAV and HEAR it, then iterate.
+3. `picopilot audio render`: RECORD a WAV and HEAR it, then iterate.
 
 These steps are wired as CTAs (a merged SFX or song points you at `verify` then
 `audio render`), so follow the suggested next command.
 
-> `sfx from-mml` and `music from-patterns` have LANDED. `audio render` is still
-> forthcoming (v2, PICO-8-gated); until it lands, compose + arrange + `verify`,
-> and treat the WAV step as the future hear rung. The authoring MODEL below is
-> the DECIDED one for all three.
+## `audio render` / `audio record`: get a WAV by RECORDING (ADR-0009)
+
+PICO-8 has NO working offline WAV export (it SIGFPEs upstream), so picopilot gets
+audio-to-WAV the only way that works: by RECORDING a running session
+(`extcmd("audio_rec")`/`audio_end`). Two commands, both PICO-8-gated and both
+REAL-TIME recordings that need a real audio+video session (a developer machine,
+NOT headless CI), NOT deterministic offline exports:
+
+- **`picopilot audio render`** injects a THROWAWAY play-harness for a chosen
+  target and records it, so you write NO playback code. Pick the target with
+  `--sfx <n>` (one SFX slot), `--pattern <p>` (one music pattern), or NEITHER
+  (the whole song, `music 0`). The record window is derived from an `--sfx`
+  target's speed+rows; override any target with `--seconds <n>`. An empty slot or
+  out-of-range target is REFUSED loudly (nothing to render), never a silent
+  recording of silence.
+- **`picopilot audio record <cart>`** records the cart's OWN playback (it keeps
+  the cart's code and appends a cooperative recorder); use it to capture a whole
+  run's audio. `picopilot run --record-audio` does the same alongside a normal
+  `run` (a WAV next to the screenshots).
+
+The WAV goes to an isolated dir (`--wav-dir`, default a temp dir), never
+`~/Desktop` or the carts root (the `audio_end(1)`-saves-to-the-current-folder
+trap; picopilot steers it with PICO-8's `root_path`). PICO-8 absent -> a
+structured `pico8-not-found` (remedy `set PICO8_PATH or install PICO-8`), never a
+crash. On a headless machine the recording succeeds but captures NO audio
+(`captured:false` + a nudge to run on a machine with a display + audio device):
+that is honest, not a failure of the recipe.
 
 ## `sfx from-mml`: one MML string -> one SFX slot
 
@@ -127,6 +150,6 @@ refusal) so a refusal is ACTIONABLE, not a dead end:
 Related: `music from-patterns` refuses an out-of-range SFX index with
 `audio-music-sfx-out-of-range` (to silence a channel use `null`, not an
 out-of-range number); a malformed JSON payload is `audio-music-parse-error`. And
-`audio render` (when it lands) requires PICO-8, so it returns a structured
+`audio render`/`audio record` require PICO-8, so they return a structured
 `pico8-not-found` (remedy `set PICO8_PATH or install PICO-8`) when absent, never
 a crash. The text authoring + transpile steps need neither PICO-8 nor shrinko.

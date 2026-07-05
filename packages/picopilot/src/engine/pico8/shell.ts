@@ -1,11 +1,14 @@
 import {spawn} from 'node:child_process';
-import {existsSync, readdirSync} from 'node:fs';
+import {existsSync, readdirSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {
 	type ExitReason,
 	type Pico8Adapter,
 	pico8NotFound,
+	type Pico8RecordResult,
 	type Pico8Result,
+	RECORD_WAV_BASENAME,
+	type RecordOptions,
 	type RunOptions,
 } from './adapter.js';
 import {SentinelWatcher} from './sentinel.js';
@@ -90,6 +93,31 @@ function collectScreenshots(shotDir: string): string[] {
 		.map((f) => join(shotDir, f));
 }
 
+/**
+ * The WAV a record run produced in its `wavDir`, or `undefined`. Prefers the
+ * expected `<basename>.wav` (what the harness named via `set_filename`); falls
+ * back to any single `.wav` present. A well-formed but EMPTY WAV (a headless
+ * `-x` capture yields a 44-byte 0-frame RIFF header, ADR-0009) is treated as
+ * "no usable WAV" so a silent capture is not reported as a real recording.
+ */
+function collectWav(wavDir: string, basename: string): string | undefined {
+	if (!existsSync(wavDir)) return undefined;
+	const wavs = readdirSync(wavDir).filter((f) =>
+		f.toLowerCase().endsWith('.wav'),
+	);
+	if (wavs.length === 0) return undefined;
+	const expected = `${basename}.wav`;
+	const chosen = wavs.includes(expected) ? expected : wavs.sort()[0]!;
+	const path = join(wavDir, chosen);
+	// A 44-byte RIFF header with no PCM data is the empty/silent (headless) WAV.
+	try {
+		if (statSync(path).size <= 44) return undefined;
+	} catch {
+		return undefined;
+	}
+	return path;
+}
+
 /** Options for {@link ShellPico8Adapter}. */
 export interface ShellPico8Options {
 	/** The environment for the child (its `PICO8_PATH`/`PATH` locate the binary). */
@@ -118,7 +146,7 @@ export class ShellPico8Adapter implements Pico8Adapter {
 	}
 
 	run(options: RunOptions): Promise<Pico8Result> {
-		const [file, ...rest] = pico8Candidates(this.env) as [string, ...string[]];
+		const [file] = pico8Candidates(this.env) as [string, ...string[]];
 		const args = [
 			'-desktop',
 			options.shotDir,
@@ -127,9 +155,66 @@ export class ShellPico8Adapter implements Pico8Adapter {
 			// One-shot scripted input (the cart reads it via stat(6)); omitted if absent.
 			...(options.input !== undefined ? ['-p', options.input] : []),
 		];
-		const watcher = new SentinelWatcher(options.sentinel);
+		return this.orchestrate(file, args, options, (exitReason, printh) => ({
+			ok: true,
+			value: {
+				screenshots: collectScreenshots(options.shotDir),
+				printh,
+				exitReason,
+			},
+		}));
+	}
 
-		return new Promise<Pico8Result>((resolve) => {
+	/**
+	 * Records a running cart's audio to a WAV (ADR-0009). Launches PICO-8 in a
+	 * REAL A/V session (`-run`, NOT the headless `-x` that mixes no audio) and
+	 * controls the WAV location with `-root_path <wavDir>`, because
+	 * `extcmd("audio_end", 1)` saves to PICO-8's CURRENT folder, not `-desktop`
+	 * (the `audio_end(1)` trap). The cooperating cart (a harness for `record`, or
+	 * the whole render harness) does the `audio_rec`/`audio_end`/sentinel dance; we
+	 * watch the sentinel, arm the backstop, and collect `<basename>.wav` from the
+	 * isolated `wavDir`. Live capture is a manual/opt-in tier; the absent path is
+	 * the CI-testable one.
+	 */
+	record(options: RecordOptions): Promise<Pico8RecordResult> {
+		const [file] = pico8Candidates(this.env) as [string, ...string[]];
+		const basename = options.wavBasename ?? RECORD_WAV_BASENAME;
+		// `-root_path <wavDir>` steers the `audio_end(1)`-to-current-folder WAV into
+		// the isolated temp dir (never ~/Desktop or the carts root). `-run` is a real
+		// A/V session (recording needs audio to capture; `-x` yields an empty WAV).
+		const args = ['-root_path', options.wavDir, '-run', options.cartPath];
+		return this.orchestrate<Pico8RecordResult>(
+			file,
+			args,
+			{sentinel: options.sentinel, backstopMs: options.backstopMs},
+			(exitReason, printh) => ({
+				ok: true,
+				value: {
+					wavPath: collectWav(options.wavDir, basename),
+					printh,
+					exitReason,
+				},
+			}),
+		);
+	}
+
+	/**
+	 * The shared launch/sentinel-watch/backstop/collect loop behind both
+	 * {@link run} and {@link record}. `buildOk` turns the exit reason + captured
+	 * stdout into the command-specific success value; a spawn ENOENT with no
+	 * fallback resolves the structured {@link pico8NotFound}. `printh` for `run` is
+	 * filled by the caller from the run report path (kept out of `buildOk` there so
+	 * the two report shapes stay distinct).
+	 */
+	private orchestrate<R extends {ok: boolean}>(
+		file: string,
+		args: string[],
+		opts: {sentinel?: string; backstopMs: number},
+		buildOk: (exitReason: ExitReason, printh: string) => R,
+	): Promise<R | ReturnType<typeof pico8NotFound>> {
+		const watcher = new SentinelWatcher(opts.sentinel);
+
+		return new Promise<R | ReturnType<typeof pico8NotFound>>((resolve) => {
 			let settled = false;
 			let backstop: NodeJS.Timeout | undefined;
 			const proc = this.spawnRun(file, args, this.env);
@@ -138,34 +223,19 @@ export class ShellPico8Adapter implements Pico8Adapter {
 				if (settled) return;
 				settled = true;
 				if (backstop !== undefined) clearTimeout(backstop);
-				resolve({
-					ok: true,
-					value: {
-						screenshots: collectScreenshots(options.shotDir),
-						printh: watcher.text,
-						exitReason,
-					},
-				});
+				resolve(buildOk(exitReason, watcher.text));
 			};
 
 			proc.onError((err) => {
-				// ENOENT on the ONLY candidate (or the resolved PICO8_PATH) ⇒ absent.
-				// Any first-candidate failure with no working fallback is pico8-not-found;
-				// we do not try the `pico8` fallback here because a bad PICO8_PATH should
-				// surface as absence with the same remedy, not silently fall through.
+				// A spawn ENOENT ⇒ PICO-8 is absent (a bad PICO8_PATH surfaces as absence
+				// with the same remedy, not a silent fall-through). Any other spawn error
+				// is a failed run, not a crash.
 				if (settled) return;
-				if (err.code === 'ENOENT' && rest.length === 0) {
-					settled = true;
-					if (backstop !== undefined) clearTimeout(backstop);
-					resolve(pico8NotFound());
-				} else if (err.code === 'ENOENT') {
-					// PICO8_PATH ENOENTed but a `pico8` fallback exists: treat as absent
-					// too (keep the boundary simple + the remedy identical).
+				if (err.code === 'ENOENT') {
 					settled = true;
 					if (backstop !== undefined) clearTimeout(backstop);
 					resolve(pico8NotFound());
 				} else {
-					// A non-ENOENT spawn error is still a failed run, not a crash.
 					finish('exit');
 				}
 			});
@@ -184,7 +254,7 @@ export class ShellPico8Adapter implements Pico8Adapter {
 				if (settled) return;
 				proc.kill();
 				finish('timeout');
-			}, options.backstopMs);
+			}, opts.backstopMs);
 		});
 	}
 }

@@ -1,9 +1,17 @@
-import {existsSync, mkdirSync, mkdtempSync} from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {isAbsolute, join, resolve} from 'node:path';
 import {type Cli, z} from 'incur';
 import {
+	buildRecordHarness,
 	DONE_SENTINEL,
+	HarnessError,
 	type Pico8Adapter,
 	ShellPico8Adapter,
 } from '../engine/pico8/index.js';
@@ -83,6 +91,12 @@ export function registerRun(
 				.describe(
 					'One-shot scripted input passed as `-p` (the cart reads it via stat(6)) for automated playtests.',
 				),
+			recordAudio: z
+				.boolean()
+				.default(false)
+				.describe(
+					"Also capture a WAV of the run's audio alongside the screenshots (ADR-0009). A REAL-TIME recording that needs a real audio+video session (a separate -run pass, NOT the headless screenshot pass), never an offline export.",
+				),
 		}),
 		// incur resolves these from the (test-overridable) env source and hands
 		// them to the child, so PICO8_PATH/PATH locate the binary in isolation.
@@ -106,6 +120,17 @@ export function registerRun(
 					'sentinel = cart signalled done; timeout = backstop fired; exit = PICO-8 quit.',
 				),
 			shotDir: z.string().describe('The dir screenshots were written to.'),
+			wav: z
+				.string()
+				.optional()
+				.describe(
+					'Absolute path of the captured WAV (only with --record-audio; omitted if no audio was captured).',
+				),
+			audioCaptured: z
+				.boolean()
+				.describe(
+					'Whether a non-empty WAV was captured (false unless --record-audio ran and produced audio).',
+				),
 		}),
 		examples: [
 			{description: 'Run main.p8'},
@@ -162,6 +187,40 @@ export function registerRun(
 
 			const {screenshots, printh, exitReason} = result.value;
 
+			// --record-audio: an ADDITIVE second pass that records the run's audio to a
+			// WAV. It cannot reuse the headless `-x` screenshot pass (which mixes no
+			// audio -> an empty WAV, ADR-0009), so it does a separate `-run` capture via
+			// the record seam, injecting the same cooperative recorder `audio record`
+			// uses. The WAV lands in the isolated shotDir alongside the screenshots.
+			let wav: string | undefined;
+			let audioCaptured = false;
+			if (options.recordAudio) {
+				try {
+					const harness = buildRecordHarness(readFileSync(cartPath, 'utf8'), {
+						sentinel: options.sentinel,
+					});
+					const harnessCart = join(shotDir, 'record-audio-harness.p8');
+					writeFileSync(harnessCart, harness.cartText);
+					const rec = await adapter.record({
+						cartPath: harnessCart,
+						wavDir: shotDir,
+						wavBasename: harness.wavBasename,
+						sentinel: options.sentinel,
+						backstopMs: options.backstopMs,
+					});
+					if (rec.ok) {
+						wav = rec.value.wavPath;
+						audioCaptured = rec.value.wavPath !== undefined;
+					}
+					// A record-pass pico8-not-found is impossible here: the screenshot
+					// pass above already returned pico8-not-found if PICO-8 were absent.
+				} catch (e) {
+					if (!(e instanceof HarnessError)) throw e;
+					// A harness-build failure (unparseable cart) leaves audioCaptured false;
+					// the screenshot run's report still stands.
+				}
+			}
+
 			// A backstop timeout is a soft warning: the cart never signalled done, so
 			// it may have hung or errored. CTA the agent toward the static checks
 			// (lint/tokens) to catch a code fault before re-running.
@@ -185,7 +244,14 @@ export function registerRun(
 					: undefined;
 
 			return ok(
-				{screenshots: [...screenshots], printh, exitReason, shotDir},
+				{
+					screenshots: [...screenshots],
+					printh,
+					exitReason,
+					shotDir,
+					wav,
+					audioCaptured,
+				},
 				cta === undefined ? undefined : {cta},
 			);
 		},

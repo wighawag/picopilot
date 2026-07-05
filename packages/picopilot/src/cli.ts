@@ -1,4 +1,5 @@
 import {Cli} from 'incur';
+import {registerAudio} from './commands/audio.js';
 import {registerGfx} from './commands/gfx.js';
 import {registerInit} from './commands/init.js';
 import {registerLint} from './commands/lint.js';
@@ -48,6 +49,7 @@ export function createCli(): Cli.Cli {
 	registerRun(cli);
 	registerSfx(cli);
 	registerMusic(cli);
+	registerAudio(cli);
 
 	return cli;
 }

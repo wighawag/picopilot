@@ -2,7 +2,7 @@ import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
-import {DONE_SENTINEL} from './adapter.js';
+import {DONE_SENTINEL, RECORD_WAV_BASENAME} from './adapter.js';
 import {
 	type Pico8Process,
 	ShellPico8Adapter,
@@ -212,5 +212,126 @@ describe('ShellPico8Adapter: backstop + natural exit', () => {
 		} finally {
 			rmSync(shotDir, {recursive: true, force: true});
 		}
+	});
+});
+
+/** A valid (non-empty) RIFF/WAVE payload: header + a few PCM sample bytes. */
+function writeNonEmptyWav(path: string): void {
+	// 44-byte header + 8 bytes of data so statSync(path).size > 44 (a real capture).
+	writeFileSync(path, Buffer.concat([Buffer.alloc(44), Buffer.alloc(8, 1)]));
+}
+
+describe('ShellPico8Adapter.record: PICO-8 absent (the CI-testable boundary)', () => {
+	it('returns structured pico8-not-found when the binary ENOENTs', async () => {
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.record({
+			cartPath: '/x/main.p8',
+			wavDir: '/x/wav',
+			backstopMs: 1000,
+		});
+		proc.fail('ENOENT');
+		const result = await resultP;
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('pico8-not-found');
+			expect(result.remedy).toBe('set PICO8_PATH or install PICO-8');
+			expect(result.needs).toContain('pico8');
+		}
+	});
+});
+
+describe('ShellPico8Adapter.record: real A/V session + WAV isolation', () => {
+	let wavDir: string;
+	beforeEach(() => {
+		wavDir = mkdtempSync(join(tmpdir(), 'pico8-wav-'));
+	});
+	afterEach(() => rmSync(wavDir, {recursive: true, force: true}));
+
+	it('launches with `-run` (real A/V), NOT headless `-x`, and `-root_path <wavDir>`', async () => {
+		const proc = new FakeProcess();
+		let spawnArgs: string[] = [];
+		const spawn: SpawnRunner = (_file, args) => {
+			spawnArgs = args;
+			return proc;
+		};
+		const adapter = new ShellPico8Adapter({env: {}, spawn});
+		const resultP = adapter.record({
+			cartPath: '/x/harness.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		await resultP;
+		// The record session must be a real A/V run (recording needs audio to
+		// capture; `-x` yields an empty WAV, ADR-0009).
+		expect(spawnArgs).toContain('-run');
+		expect(spawnArgs).not.toContain('-x');
+		// The WAV location is steered to the isolated dir via root_path (the
+		// audio_end(1)-to-current-folder quirk), never ~/Desktop.
+		expect(spawnArgs).toContain('-root_path');
+		expect(spawnArgs[spawnArgs.indexOf('-root_path') + 1]).toBe(wavDir);
+	});
+
+	it('collects the <basename>.wav the cooperating cart wrote (sentinel-ended)', async () => {
+		const proc = new FakeProcess();
+		writeNonEmptyWav(join(wavDir, `${RECORD_WAV_BASENAME}.wav`));
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.record({
+			cartPath: '/x/harness.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		const result = await resultP;
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value.wavPath).toBe(
+				join(wavDir, `${RECORD_WAV_BASENAME}.wav`),
+			);
+			expect(result.value.exitReason).toBe('sentinel');
+		}
+		expect(proc.killed).toBe(true);
+	});
+
+	it('treats a 44-byte (0-frame) WAV as NO usable audio (the headless empty-WAV trap)', async () => {
+		const proc = new FakeProcess();
+		// A well-formed but EMPTY RIFF header (what headless -x produces).
+		writeFileSync(join(wavDir, `${RECORD_WAV_BASENAME}.wav`), Buffer.alloc(44));
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.record({
+			cartPath: '/x/harness.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		const result = await resultP;
+		if (result.ok) expect(result.value.wavPath).toBeUndefined();
+	});
+
+	it('reports no WAV when none was produced', async () => {
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.record({
+			cartPath: '/x/harness.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		const result = await resultP;
+		if (result.ok) expect(result.value.wavPath).toBeUndefined();
+	});
+
+	it('fires the backstop when the cart never signals (never a hang)', async () => {
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.record({
+			cartPath: '/x/harness.p8',
+			wavDir,
+			backstopMs: 20,
+		});
+		const result = await resultP;
+		if (result.ok) expect(result.value.exitReason).toBe('timeout');
+		expect(proc.killed).toBe(true);
 	});
 });

@@ -62,6 +62,63 @@ export interface Pico8Ok {
  */
 export type Pico8Result = Pico8Ok | Pico8NotFound;
 
+/**
+ * A completed audio-RECORDING run's results (ADR-0009). `wavPath` is the WAV the
+ * cart wrote via `extcmd("audio_end", 1)` into the run-controlled folder (the
+ * `audio_end(1)`-to-current-folder quirk, isolated to a temp `wavDir`), or
+ * `undefined` if none was produced (e.g. a headless `-x` capture, which yields a
+ * silent 0-frame file we treat as "no usable WAV", or a run that never recorded).
+ * `printh` + `exitReason` mirror {@link RunReport}, so a recording is a run with a
+ * WAV alongside the same run state.
+ */
+export interface RecordReport {
+	readonly wavPath: string | undefined;
+	readonly printh: string;
+	readonly exitReason: ExitReason;
+}
+
+/** A successful audio-record call carrying the {@link RecordReport}. */
+export interface Pico8RecordOk {
+	readonly ok: true;
+	readonly value: RecordReport;
+}
+
+/**
+ * The result {@link Pico8Adapter.record} returns: a {@link RecordReport} or the
+ * structured {@link Pico8NotFound} (PICO-8 absent), mirroring {@link Pico8Result}.
+ */
+export type Pico8RecordResult = Pico8RecordOk | Pico8NotFound;
+
+/**
+ * Options for a single {@link Pico8Adapter.record} (ADR-0009). The recorded cart
+ * is expected to COOPERATE: at start it does `extcmd("set_filename", <base>)` +
+ * `extcmd("audio_rec")`, and when finished `extcmd("audio_end", 1)` (save to the
+ * current folder) then `printh` the sentinel. For `audio record <cart>` the
+ * caller injects that harness around the user's cart; for `audio render` the
+ * whole harness cart is built by {@link import('./harness.js')}.
+ */
+export interface RecordOptions {
+	/** Absolute path to the `.p8` cart to run and record. */
+	readonly cartPath: string;
+	/**
+	 * The run-controlled folder PICO-8 records the WAV into. Because
+	 * `extcmd("audio_end", 1)` saves to PICO-8's CURRENT folder (NOT `-desktop`),
+	 * the adapter points PICO-8's `root_path` here so the WAV lands in an isolated
+	 * temp dir, never `~/Desktop` or the carts root (the shared-write discipline).
+	 */
+	readonly wavDir: string;
+	/**
+	 * The base filename (no extension) the cart passed to `extcmd("set_filename")`,
+	 * so the adapter knows which `<base>.wav` to collect. Defaults to
+	 * {@link RECORD_WAV_BASENAME} when omitted.
+	 */
+	readonly wavBasename?: string;
+	/** The stdout line that ends the run when matched (defaults to {@link DONE_SENTINEL}). */
+	readonly sentinel?: string;
+	/** The hard backstop in ms: kill PICO-8 if it neither signals nor exits by then. */
+	readonly backstopMs: number;
+}
+
 /** Options for a single {@link Pico8Adapter.run}. */
 export interface RunOptions {
 	/** Absolute path to the `.p8` cart to run. */
@@ -92,7 +149,26 @@ export interface Pico8Adapter {
 	 * exit reason. Returns {@link Pico8NotFound} when PICO-8 is not installed.
 	 */
 	run(options: RunOptions): Promise<Pico8Result>;
+
+	/**
+	 * Launches PICO-8 on `cartPath` in a REAL audio+video session (NOT headless
+	 * `-x`, which mixes no audio and yields an empty WAV, ADR-0009), streams
+	 * stdout, ends on the sentinel (backstop as the net), and collects the WAV the
+	 * cooperating cart wrote via `audio_rec`/`audio_end(1)`. Returns
+	 * {@link Pico8NotFound} when PICO-8 is not installed. Live capture is a
+	 * manual/opt-in tier; CI drives a fake runner + the absent boundary.
+	 */
+	record(options: RecordOptions): Promise<Pico8RecordResult>;
 }
+
+/** The default WAV basename a recorded cart passes to `extcmd("set_filename")`. */
+export const RECORD_WAV_BASENAME = 'picopilot-audio' as const;
+
+/** The 60 audio ticks PICO-8 advances per second: the record-duration unit (finding). */
+export const PICO8_TICKS_PER_SECOND = 120;
+
+/** The video frames PICO-8 runs per second (`_update` at 30fps; `t` counts frames). */
+export const PICO8_FRAMES_PER_SECOND = 30;
 
 /** The frozen {@link Pico8NotFound} value, so every call site returns the same shape. */
 export function pico8NotFound(): Pico8NotFound {
