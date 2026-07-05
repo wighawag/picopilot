@@ -21,6 +21,14 @@
  * Out-of-range pitch and >32 rows are STRUCTURED ERRORS ({@link AudioMmlError}),
  * never silent clamps: a silent clamp produces wrong-sounding music the author
  * cannot see (finding B.2 / B.4, matching picopilot's smart-refuse philosophy).
+ *
+ * SFX-level FILTER directives (finding A.7): `!noiz !buzz !detune1/!detune2
+ * !reverb[1|2] !dampen[1|2]` set PICO-8's 5 per-SFX filters (the first header
+ * byte), reaching the class of DESIGNED sounds (explosion = DAMPEN body + REVERB
+ * tail, engine hum, pad) that no per-note pitch/waveform/volume MML can
+ * synthesize. `!`-prefixed keywords never collide with the note grammar (unlike
+ * the rejected bare-letter effect mnemonics, ADR-0008). A bad DAMPEN/REVERB level
+ * is a structured refusal, never a clamp.
  */
 
 /** A `__sfx__` row is exactly this many hex chars: 8 header + 32 notes x 5. */
@@ -43,6 +51,32 @@ export const DEFAULT_SPEED = 16;
 
 /** The default note length in tracker rows (one row; finding B.4). */
 export const DEFAULT_LENGTH = 1;
+
+/**
+ * The per-SFX FILTER switches (finding A.7). They live in the FIRST header byte
+ * of the `__sfx__` row (the `[0:2]` hex pair, the byte A.1 called "editor mode"):
+ * an 8-bit bitfield whose LOW bit is the cosmetic pitch/tracker mode flag and
+ * whose upper 7 bits are the filters. picopilot emits mode 0 (pitch mode), so the
+ * byte is exactly the OR of the selected filter values below.
+ *
+ * Decoded byte-for-byte on PICO-8 v0.2.7 by poke-and-readback + single-bit audio
+ * diff (finding A.7). NOIZ applies only to instrument 6 (`@6`, manual);
+ * DAMPEN/REVERB have 2 levels each (`!dampen`/`!dampen2`, `!reverb`/`!reverb2`).
+ */
+export const FILTER_NOIZ = 0x02;
+export const FILTER_BUZZ = 0x04;
+export const FILTER_DETUNE_1 = 0x08;
+export const FILTER_DETUNE_2 = 0x10;
+/** REVERB (echo) switch (`0x20`); see the level note below (finding A.7). */
+export const FILTER_REVERB = 0x20;
+/**
+ * DAMPEN (low-pass) level 1 (`0x80`) and level 2 (`0xc0`); 0 = off (finding
+ * A.7). Verified progressive: `0xc0` low-passes strictly more than `0x80`.
+ */
+export const FILTER_DAMPEN_LEVEL = [0x00, 0x80, 0xc0] as const;
+
+/** The highest level DAMPEN (`!dampen<N>`) accepts (finding A.7). */
+export const FILTER_MAX_LEVEL = 2;
 
 /**
  * Semitone offset of each note letter from C, within an octave (finding B.2:
@@ -73,6 +107,8 @@ export type AudioMmlErrorCode =
 	| 'audio-mml-pitch-out-of-range'
 	/** The accumulated tracker rows exceeded the 32-row SFX cap (finding B.4). */
 	| 'audio-mml-sfx-overflow'
+	/** A `!dampen<N>`/`!reverb<N>` level fell outside 1..2 (finding A.7). */
+	| 'audio-mml-filter-level-out-of-range'
 	/** The MML text is syntactically malformed (a token we cannot parse). */
 	| 'audio-mml-parse-error';
 
@@ -126,6 +162,11 @@ export interface SfxTranspileResult {
 	loopStart: number;
 	/** The header loop-end value (0 when off or in the LEN special case). */
 	loopEnd: number;
+	/**
+	 * The per-SFX FILTER byte (the first header byte, finding A.7): the OR of the
+	 * selected filter values, with the low mode bit 0. 0 = no filters.
+	 */
+	filters: number;
 	/** Any dotted-length rows that had to be rounded to a whole row. */
 	roundingWarnings: RowRoundingWarning[];
 }
@@ -171,6 +212,7 @@ export function mmlToSfxRow(mml: string): SfxTranspileResult {
 	const notes: Note[] = [];
 	const warnings: RowRoundingWarning[] = [];
 	let speed = DEFAULT_SPEED;
+	let filters = 0;
 	let loopStartRow: number | undefined;
 	let loopEndRow: number | undefined;
 	let lastNote: Note | undefined;
@@ -216,6 +258,16 @@ export function mmlToSfxRow(mml: string): SfxTranspileResult {
 			}
 			speed = value;
 			i = next;
+			continue;
+		}
+		// `!<name>[<level>]`: an SFX-level FILTER directive (finding A.7). A `!` head
+		// never collides with the note grammar (unlike the rejected `sl vb dr`
+		// mnemonics, which WERE bare note-letter sequences, ADR-0008). They set the
+		// first header byte; DAMPEN/REVERB take an optional 1..2 level (default 1).
+		if (ch === '!') {
+			const parsed = readFilter(src, i);
+			filters |= parsed.bits;
+			i = parsed.next;
 			continue;
 		}
 		if (ch === '{') {
@@ -382,11 +434,12 @@ export function mmlToSfxRow(mml: string): SfxTranspileResult {
 	);
 
 	return {
-		row: emitRow({speed, loopStart, loopEnd, notes}),
+		row: emitRow({filters, speed, loopStart, loopEnd, notes}),
 		rows: notes.length,
 		speed,
 		loopStart,
 		loopEnd,
+		filters,
 		roundingWarnings: warnings,
 	};
 }
@@ -477,6 +530,101 @@ function parseError(src: string, at: number, why: string): AudioMmlError {
 }
 
 /**
+ * Parses one `!<name>[<level>]` FILTER directive at `at` (the `!`), returning the
+ * filter bits to OR into the SFX header byte + the resume index (finding A.7).
+ *
+ * The 5 switches: `!noiz` (instrument-6-only), `!buzz`, `!detune1`, `!detune2`,
+ * `!reverb[1|2]`, `!dampen[1|2]`. DAMPEN/REVERB take an optional level 1..2
+ * (default 1); `!dampen`/`!dampen1` = level 1, `!dampen2` = level 2. A level
+ * OUTSIDE 1..2 is a STRUCTURED refusal ({@link AudioMmlError}
+ * `audio-mml-filter-level-out-of-range`), never a silent clamp (matching the
+ * pitch/overflow refusals, ADR-0008). `!detune` requires an explicit 1/2 (the
+ * two detunes are distinct sub-modes, not levels of one).
+ *
+ * @throws {AudioMmlError} `audio-mml-filter-level-out-of-range` (bad DAMPEN/
+ *   REVERB/DETUNE level) or `audio-mml-parse-error` (an unknown `!<name>`).
+ */
+function readFilter(src: string, at: number): {bits: number; next: number} {
+	// Read the lowercase name letters after `!`.
+	let j = at + 1;
+	while (j < src.length && /[a-z]/i.test(src[j]!)) j++;
+	const name = src.slice(at + 1, j).toLowerCase();
+	// Read an optional trailing level digit (e.g. `!dampen2`, `!detune1`).
+	const {value: level, next} = readInt(src, j);
+	const token = src.slice(at, next);
+
+	const leveled = (
+		table: readonly number[],
+		label: string,
+		defaultLevel: number,
+	): number => {
+		const lvl = level ?? defaultLevel;
+		if (lvl < 1 || lvl > FILTER_MAX_LEVEL) {
+			throw new AudioMmlError(
+				'audio-mml-filter-level-out-of-range',
+				`filter '${token}' has ${label} level ${lvl}, outside 1..${FILTER_MAX_LEVEL}. PICO-8 gives ${label} exactly ${FILTER_MAX_LEVEL} levels; use !${name}1 or !${name}2.`,
+			);
+		}
+		return table[lvl]!;
+	};
+
+	switch (name) {
+		case 'noiz':
+			rejectLevel(src, at, token, name, level);
+			return {bits: FILTER_NOIZ, next};
+		case 'buzz':
+			rejectLevel(src, at, token, name, level);
+			return {bits: FILTER_BUZZ, next};
+		case 'reverb':
+			rejectLevel(src, at, token, name, level);
+			return {bits: FILTER_REVERB, next};
+		case 'detune': {
+			// `!detune` needs an explicit 1 or 2 (they are distinct sub-modes).
+			if (level === undefined) {
+				throw new AudioMmlError(
+					'audio-mml-filter-level-out-of-range',
+					`filter '${token}' needs a mode: !detune1 (flange) or !detune2 (octave). PICO-8 has two distinct detunes, not a level.`,
+				);
+			}
+			if (level === 1) return {bits: FILTER_DETUNE_1, next};
+			if (level === 2) return {bits: FILTER_DETUNE_2, next};
+			throw new AudioMmlError(
+				'audio-mml-filter-level-out-of-range',
+				`filter '${token}' mode ${level} is not 1 (flange) or 2 (octave).`,
+			);
+		}
+		case 'detune1':
+			return {bits: FILTER_DETUNE_1, next};
+		case 'detune2':
+			return {bits: FILTER_DETUNE_2, next};
+		case 'dampen':
+			return {bits: leveled(FILTER_DAMPEN_LEVEL, 'DAMPEN', 1), next};
+		default:
+			throw parseError(
+				src,
+				at,
+				`unknown filter '${token}'. The 5 SFX filters are !noiz !buzz !detune1/!detune2 !reverb !dampen[1|2]`,
+			);
+	}
+}
+
+/** Refuses a level on a filter that has none (`!noiz2`, `!buzz1`), no silent drop. */
+function rejectLevel(
+	src: string,
+	at: number,
+	token: string,
+	name: string,
+	level: number | undefined,
+): void {
+	if (level !== undefined) {
+		throw new AudioMmlError(
+			'audio-mml-filter-level-out-of-range',
+			`filter '${token}' takes no level; !${name} is a simple on/off switch (only !dampen and !reverb have levels).`,
+		);
+	}
+}
+
+/**
  * Resolves the raw `{`/`}` marker rows into header `loopStart`/`loopEnd` values
  * (finding A.1 / B.5):
  * - neither marker: loop off (`0 0`).
@@ -502,15 +650,21 @@ function resolveLoop(
 
 /** Serializes the header + notes into the 168-char `__sfx__` text row (finding A). */
 function emitRow(sfx: {
+	filters: number;
 	speed: number;
 	loopStart: number;
 	loopEnd: number;
 	notes: Note[];
 }): string {
-	// Header: mode(2) speed(2) loopstart(2) loopend(2). Mode 0 = pitch mode
-	// (cosmetic; does not affect playback, finding A.1).
+	// Header: filter-byte(2) speed(2) loopstart(2) loopend(2). The first byte is the
+	// per-SFX FILTER bitfield (finding A.7); its low bit is the cosmetic pitch/
+	// tracker mode flag, which we leave 0 (pitch mode), so the byte is exactly the
+	// OR of the selected filter values.
 	const header =
-		byte(0) + byte(sfx.speed) + byte(sfx.loopStart) + byte(sfx.loopEnd);
+		byte(sfx.filters) +
+		byte(sfx.speed) +
+		byte(sfx.loopStart) +
+		byte(sfx.loopEnd);
 
 	let body = '';
 	for (let r = 0; r < SFX_MAX_ROWS; r++) {

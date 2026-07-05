@@ -1,6 +1,6 @@
 ---
 name: picopilot-audio
-description: Compose PICO-8 sound as text with picopilot. The #1 reframe (no tempo, compose in TRACKER ROWS at one speed), the picopilot-MML grammar (waveform/volume/effect per note), structural music assembly from SFX references, the two loud refusals, and the compose to hear ears loop. Use when authoring __sfx__ / __music__.
+description: Compose PICO-8 sound as text with picopilot. The #1 reframe (no tempo, compose in TRACKER ROWS at one speed), the picopilot-MML grammar (waveform/volume/effect per note + the 5 SFX filters for designed sounds like explosion/engine/pad), structural music assembly from SFX references, the loud refusals, and the compose to hear ears loop. Use when authoring __sfx__ / __music__.
 ---
 
 # picopilot audio
@@ -93,8 +93,10 @@ custom instrument), `v<0-7>` volume, `e<0-7>` effect (0 none, 1 slide, 2 vibrato
 (`c d e f g a b`, `+`/`#` sharp, `-` flat) emits one row in the current state.
 `r<N>` = N silent rows; `^<N>` extends the previous note; `s<N>` = SFX speed
 (default `s16`); `{`/`}` = loop markers (a LONE `{` marks the pattern LEN, the
-finding's LEN special case). Whitespace + `|` bars are cosmetic. See finding
-Part B for the full tables.
+finding's LEN special case). SFX-level FILTERS (per-SFX, order-free): `!dampen`/
+`!dampen2`, `!reverb`, `!noiz`, `!buzz`, `!detune1`/`!detune2` (see the filters
+section below). Whitespace + `|` bars are cosmetic. See finding Part B / A.7 for
+the full tables.
 
 Note `e` is BOTH a note letter AND the effect prefix: `e0`-`e7` is the EFFECT; a
 bare `e` is note E (hold it with `l4 e`, not `e4`). Effects have NO letter
@@ -103,6 +105,39 @@ real note-plus-length sequence); use the numeric `e0`-`e7`.
 
 Example: `picopilot sfx from-mml 0 "s8 @3 v6 e2 c e g > c"` is a square-wave
 (`@3`) vibrato (`e2`) arpeggio at speed 8.
+
+### SFX FILTERS: how to reach DESIGNED sounds (explosion, engine, pad)
+
+Pitch + waveform + volume + effect get you notes; the 5 per-SFX FILTERS are what
+make a sound DESIGNED. They are `!`-prefixed SFX-level directives (per-SFX like
+`s<N>`, place them anywhere in the string, order-free): they set the SFX's first
+header byte and change nothing per-note. Use them when a boom reads as a
+machine-gun rattle, or an engine as a buzz: no amount of pitch/volume MML can
+synthesize the low BODY or resonant TAIL, only these filters can.
+
+- **`!dampen` / `!dampen2`** — a low-pass at 2 levels. This is the BODY/weight:
+  turns raw `@6` noise from a hiss/rattle into a "boom". `!dampen2` is heavier.
+  The single biggest lever for an explosion.
+- **`!reverb`** — an echo/tail. The resonant TAIL that makes a boom ring out (and
+  a pad bloom). On/off (a single switch, see the caveat below).
+- **`!noiz`** — pure white-noise texture; applies ONLY to instrument 6 (`@6`), a
+  no-op on any other waveform. The noise character under an explosion.
+- **`!buzz`** — a buzzier alteration (all waveforms). With `@6` + `!buzz` and NOIZ
+  off you get brown noise.
+- **`!detune1`** (flange, second detuned voice) / **`!detune2`** (a voice tuned up
+  ~an octave) — thickness for a lead or pad. `!detune` needs an explicit 1 or 2.
+
+The canonical DESIGNED explosion: `!dampen2 !reverb @6` over a descending pitch
+sweep + volume decay, e.g.
+`picopilot sfx from-mml 3 "s6 !dampen2 !reverb @6 o3 v7 g o1 c o0 g v6 e v5 c v4 g v3 c v2 g v1 c"`.
+Strip the two filters and the SAME notes read as a descending zap / rattle: the
+filters are the tool gap the audio dogfood surfaced (they set header byte `e0`).
+
+CAVEAT (finding A.7): the filter byte layout was decoded byte-for-byte on PICO-8
+v0.2.7, but the byte has no non-colliding room for a REVERB level 2 under the
+verified layout, so picopilot exposes `!reverb` as a single on/off switch (DAMPEN
+keeps its 2 levels). A bad level (`!dampen3`, `!noiz2`, `!reverb2`, `!detune`
+without 1/2) is a loud `audio-mml-filter-level-out-of-range` refusal, not a clamp.
 
 ## `music from-patterns`: structural, NOT a notation
 
@@ -146,6 +181,10 @@ refusal) so a refusal is ACTIONABLE, not a dead end:
 - **`audio-mml-sfx-overflow`** (`sfx from-mml`): more than 32 rows. Fix: SPLIT the
   melody across multiple SFX slots yourself, then arrange them with
   `music from-patterns`.
+- **`audio-mml-filter-level-out-of-range`** (`sfx from-mml`): a filter level PICO-8
+  does not have (`!dampen3`, `!reverb2`, `!noiz2`, or `!detune` without a mode).
+  Fix: `!dampen` has levels 1-2 (`!dampen`/`!dampen2`); `!reverb`/`!noiz`/`!buzz`
+  are on/off; `!detune` needs `!detune1` (flange) or `!detune2` (octave).
 
 Related: `music from-patterns` refuses an out-of-range SFX index with
 `audio-music-sfx-out-of-range` (to silence a channel use `null`, not an
