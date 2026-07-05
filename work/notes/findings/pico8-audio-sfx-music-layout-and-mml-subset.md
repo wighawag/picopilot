@@ -88,7 +88,9 @@ byte1 (b1):  bit7  | bit6 bit5 bit4 | bit3 bit2 bit1 | bit0
 
 The **text format is the friendlier surface** and is what a transpiler should EMIT: writing the `__sfx__` line directly avoids reproducing this bit-scatter. picopilot should generate `PP W V E` nibbles, not poke RAM.
 
-Header in RAM lives at `0x3200 + 64*sfx + 64` .. `+67` (i.e. after the 64 note bytes): `+64` editor mode, `+65` speed, `+66` loop start, `+67` loop end. VERIFIED (poked at `0x3200+64..67`, appeared as the 4 header bytes).
+Header in RAM lives after the 64 note bytes of each SFX: `+64` (first header byte, see the CORRECTION below), `+65` speed, `+66` loop start, `+67` loop end. VERIFIED (poked those 4 offsets, appeared as the 4 header bytes).
+
+**CORRECTION (2026-07-05 filter spike, A.7): the RAM stride is 68 bytes per SFX, NOT 64.** Each SFX in RAM at `0x3200` is `64 note bytes + 4 header bytes = 68 bytes`, so slot `n`'s header starts at `0x3200 + 68*n + 64`. The `64*sfx` originally written here was wrong (verified by poking with stride 64 vs 68 and reading the serialized rows: stride 64 scattered the note bytes across neighbouring rows; stride 68 produced clean per-slot headers). The A.1 TEXT layout (8-char header + 32x5-nibble notes = 168 chars per row) is unaffected: only the RAM address arithmetic needed the fix. And the first header byte is NOT merely "editor mode": it is a full 8-bit FILTER bitfield (A.7).
 
 ### A.4 Effects (effect nibble 0..7)
 
@@ -133,8 +135,32 @@ So the text channel bytes are `00..3f` for an active channel, `40..7f` for an "o
 
 ### A.6 Things NOT in the note bytes (scope boundary)
 
-- **Per-SFX filter switches** (NOIZ, BUZZ, DETUNE-1, DETUNE-2, REVERB, DAMPEN) are SFX-level, not per-note, and live in a separate metadata region, not in the 5-nibble note. **DECISION (v2 scope):** picopilot-MML v2 does NOT expose filters (see B.7). If needed later, add as SFX-level directives.
+- **Per-SFX filter switches** (NOIZ, BUZZ, DETUNE-1, DETUNE-2, REVERB, DAMPEN) are SFX-level, not per-note, and live in a separate metadata region, not in the 5-nibble note. They were DEFERRED in the original spike (v2 scope); the layout is now DECODED in A.7 below (the `audio-mml-sfx-filters` task), and picopilot-MML DOES expose them.
 - **Custom waveform instruments** (drawing a 64-byte looping waveform into SFX 0..7) are authored by content in SFX 0..7 themselves; a note merely REFERENCES them via waveform nibble 8..15. picopilot-MML expresses the reference (`@0..@7`), not the drawing.
+
+### A.7 Per-SFX FILTER byte layout (ADDENDUM 2026-07-05, `audio-mml-sfx-filters` spike, verified on PICO-8 v0.2.7)
+
+The 5 filter switches (NOIZ, BUZZ, DETUNE-1/2, REVERB, DAMPEN; manual "Filters" section) live in the **FIRST header byte** of each SFX, i.e. the `[0:2]` hex pair of the 168-char `__sfx__` text row (the byte A.1 called "editor mode"). It is NOT merely editor mode: it is a full 8-bit bitfield whose LOW bit is the cosmetic pitch/tracker mode flag and whose upper 7 bits carry the filters.
+
+**Method (same poke-and-readback as Part A, plus an audio-diff):** (1) poked known values into the filter byte (RAM `0x3200 + 68*n + 64`), `cstore` + `save()`, and read the serialized `__sfx__` row back: the byte round-trips VERBATIM into the text `[0:2]` (`0x00->00`, `0x01->01`, ... `0xff->ff`, `0xc0->c0`), so a transpiler EMITS this byte directly and PICO-8 stores it unmodified (no normalisation). (2) To map each BIT to a filter, rendered the SAME SFX with one bit set at a time to a WAV (real-time `-run` + `extcmd("audio_rec")`/`audio_end(1)`, ADR-0009) on two carriers, `@6` noise and `@2` saw, and compared spectral centroid / high-freq energy / RMS.
+
+**Bit -> filter (VERIFIED by single-bit audio diff):**
+
+| bit | value | filter | evidence |
+|---|---|---|---|
+| 0 | `0x01` | **editor mode** (NOT a filter; cosmetic pitch/tracker) | zero audible effect on either carrier |
+| 1 | `0x02` | **NOIZ** | big change on `@6` noise (-> brown-ish, darker+quieter), NONE on saw -> instrument-6-only, matching the manual ("applies only to instrument 6") |
+| 2 | `0x04` | **BUZZ** | darkens BOTH carriers (all-waveform buzzy alteration) |
+| 3 | `0x08` | **DETUNE-1** | brightens the tonal saw (flange 2nd voice), no noise effect |
+| 4 | `0x10` | **DETUNE-2** | brightens the saw more (octave 2nd voice), no noise effect |
+| 5 | `0x20` | **REVERB** (echo) | adds ECHO energy: RMS rises on both carriers |
+| 7 | `0x80` | **DAMPEN** (level 1) | strong LOW-PASS: centroid + HF energy drop sharply on both |
+
+**bit 6 (`0x40`) is DAMPEN's LEVEL-2 bit (a 2-bit DAMPEN field at bits 6-7):** DAMPEN `0x80` = level 1, `0xc0` (`0x80|0x40`) = level 2. VERIFIED: `0xc0` low-passes strictly MORE than `0x80` (centroid dropped further, -1780 vs -1018 Hz on saw; HF -23.6% vs -14.6%). `0x40` on its own produced an echo-like/brighter artefact (an editor-unreachable partial state where the level-2 bit is set without the base low-pass bit), NOT a low-pass, so bit 6 is only meaningful combined with bit 7.
+
+**Why REVERB is exposed as a single switch, not 2 levels (the bit-budget constraint):** the manual says both DAMPEN ("2 different levels") and REVERB ("delay of 2 or 4 ticks") have 2 levels, but the byte has room for only ONE of them to be a 2-bit field: after mode(bit0) + NOIZ + BUZZ + DETUNE-1 + DETUNE-2 (bits 1-4) + REVERB-on (bit5) + DAMPEN (bits 6-7), all 8 bits are spent. There is NO free bit for a REVERB level-2 that does not collide with DAMPEN's level-2 bit (bit 6). The `0x40` echo artefact I saw is that collision surfacing. **Confidence: the single-bit filter positions AND DAMPEN's 2 levels (0x80/0xc0, directly-observed progressive darkening) are HIGH; the location of REVERB's SECOND level is UNRESOLVED** (the box's real-time A/V capture went durably unavailable mid-spike, see `work/notes/observations/pico8-headless-audio-capture-flaky-under-run.md`, so the reverb level-2 vs the 3/4-tick delay could not be isolated; and it has no non-colliding home in this byte under the verified mono-bit layout). picopilot therefore exposes **REVERB as a single `!reverb` switch (`0x20`)** and **DAMPEN with 2 levels (`!dampen`=0x80, `!dampen2`=0xc0)** — the honest subset that is byte-verified and collision-free. Because PICO-8 stores the byte verbatim, adding a REVERB level-2 later (if a future spike isolates its bit) is a one-constant change, not a re-architecture.
+
+**Emit rule for a transpiler:** OR the chosen filter values into the first header byte, preserving the low mode bit as 0. picopilot emits `mode=0` (pitch mode) already (A.1), so the filter byte = the OR of the selected filter values. Every OTHER header byte + all 32 note rows stay byte-identical.
 
 ---
 
@@ -256,7 +282,7 @@ ADR-0005 warned the mapping might be nastier than assumed. Verdict: **the byte l
 4. **Pitch ceiling C0..D#5 (0..63).** → DECISION B.2: out-of-range = structured error, no silent clamp.
 5. **Waveform is per-note AND doubles as custom-instrument selector (nibble 0..15).** MML has no timbre-per-note concept. → DECISION B.1/B.3: `@0..@7` = built-in waveforms, `@8..@F` = SFX 0..7 as instruments. This is a first-class, modal token, the whole point of picopilot-MML over ABC.
 6. **Effects have no MML equivalent.** → DECISION B.3: `e0..e7` canonical + optional mnemonics.
-7. **Per-SFX filters (NOIZ/BUZZ/DETUNE/REVERB/DAMPEN) are out of the note bytes.** → DECISION A.6/B: NOT exposed in v2 picopilot-MML. Deferred; add as SFX-level directives later if needed. Flag if a v2 use case demands them.
+7. **Per-SFX filters (NOIZ/BUZZ/DETUNE/REVERB/DAMPEN) are out of the note bytes.** → ORIGINALLY deferred; the audio-example dogfood demanded them (a boom needs DAMPEN body + REVERB tail no pitch/vol MML can synthesize). The byte layout is now DECODED in A.7 and EXPOSED as SFX-level `!`-directives (`audio-mml-sfx-filters` task): `!noiz !buzz !detune1 !detune2 !reverb !dampen[1|2]`. They set the first header byte; a level out of range is a structured refusal (`audio-mml-filter-level-out-of-range`). REVERB is a single switch (not 2 levels) because the byte has no non-colliding bit for a REVERB level-2 under the verified mono-bit layout (see A.7).
 8. **Music is not notation.** → DECISION B.6: structural pattern list, ADR confirmed.
 9. **"off channel" vs "sfx 0".** → DECISION B.6: modelled as distinct (null/off sets bit6; index 0 is a real SFX).
 10. **Loop points: indices vs phrase.** → DECISION B.5: `{`/`}` markers; single `{` = LEN special case.
@@ -276,7 +302,7 @@ None of these forces a redesign; but #1/#2/#3 mean the v2 `sfx from-mml` **comma
 - **Concrete serialization** of the music pattern list (JSON vs TOON vs CLI flags): a `music from-patterns` command-surface decision, not a mapping decision.
 - **Multi-SFX overflow ergonomics:** when a melody exceeds 32 rows, do we error only (current decision) or offer an opt-in "split into SFX N..M + a pattern" helper? Deferred to the `sfx from-mml` task; the safe default (error) is specified here.
 - **Optional tempo→speed sugar:** whether to offer a lossy BPM convenience. Specified as out-of-scope-by-default; revisit only if authors ask.
-- **Filters (NOIZ/BUZZ/…):** deferred; revisit if a v2 use case needs them.
+- **Filters (NOIZ/BUZZ/…):** DECODED (A.7) + exposed as `!`-directives in the `audio-mml-sfx-filters` task.
 
 ## Candidate ADRs (decisions that may clear the ADR bar: hard to reverse + surprising + a real trade-off)
 

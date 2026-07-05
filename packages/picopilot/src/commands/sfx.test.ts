@@ -156,6 +156,72 @@ describe('picopilot sfx from-mml: leaves every OTHER section byte-identical', ()
 	});
 });
 
+describe('picopilot sfx from-mml: SFX filters (finding A.7)', () => {
+	it('merges the filter bits into the header, reporting the filter byte', async () => {
+		writeFileSync(cartPath, cartText());
+		const {stdout, exitCode} = await runSfx([
+			'sfx',
+			'from-mml',
+			'3',
+			'!dampen2 !reverb @6 v7 o3 e c o1 g c', // a designed explosion
+			'--cart',
+			cartPath,
+			'--json',
+		]);
+		expect(exitCode).toBe(0);
+		const out = JSON.parse(stdout);
+		// !dampen2 (0xc0) | !reverb (0x20) = 0xe0 = 224.
+		expect(out.filters).toBe(0xe0);
+		expect(out.row.slice(0, 2)).toBe('e0'); // first header byte
+		expect(out.row).toBe(
+			mmlToSfxRow('!dampen2 !reverb @6 v7 o3 e c o1 g c').row,
+		);
+		expect(out.row).toHaveLength(SFX_ROW_LENGTH);
+	});
+
+	it('leaves the note rows + other sections byte-identical (filters are header-only)', async () => {
+		writeFileSync(cartPath, cartText());
+		const before = readFileSync(cartPath, 'utf8');
+		await runSfx([
+			'sfx',
+			'from-mml',
+			'0',
+			'!dampen @6 v7 c d e',
+			'--cart',
+			cartPath,
+			'--json',
+		]);
+		const after = readFileSync(cartPath, 'utf8');
+		// Prefix (lua + gfx, before __sfx__) untouched.
+		expect(after.slice(0, before.length)).toBe(before);
+		expect(after).toContain('__gfx__\n0011223344556677\n');
+		// The written row's NOTE body matches the same MML without the filter.
+		const lines = sfxLines(after);
+		expect(lines[0]!.slice(8)).toBe(mmlToSfxRow('@6 v7 c d e').row.slice(8));
+		expect(lines[0]!.slice(0, 2)).toBe('80'); // dampen header byte
+	});
+
+	it('an out-of-range filter level -> audio-mml-filter-level-out-of-range, no write', async () => {
+		writeFileSync(cartPath, cartText());
+		const before = readFileSync(cartPath, 'utf8');
+		const {stdout, exitCode} = await runSfx([
+			'sfx',
+			'from-mml',
+			'0',
+			'!dampen3 c', // dampen has only 2 levels
+			'--cart',
+			cartPath,
+			'--json',
+		]);
+		expect(exitCode).not.toBe(0);
+		const out = JSON.parse(stdout);
+		expect(out.code).toBe('audio-mml-filter-level-out-of-range');
+		expect(out.message).toContain('DAMPEN');
+		// The cart is byte-untouched (refusal never writes).
+		expect(readFileSync(cartPath, 'utf8')).toBe(before);
+	});
+});
+
 describe('picopilot sfx from-mml: structured refusals (NO silent clamp)', () => {
 	it('out-of-range pitch -> audio-mml-pitch-out-of-range + nonzero exit, no write', async () => {
 		writeFileSync(cartPath, cartText());

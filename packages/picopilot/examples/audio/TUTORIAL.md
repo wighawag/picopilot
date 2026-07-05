@@ -33,17 +33,23 @@ picopilot sfx from-mml 1 "s4 @2 v6 e1 o2 c e g > c"
 # SFX 2 - hurt: a sharp downward drop (noise @6, drop effect e3, high -> low)
 picopilot sfx from-mml 2 "s5 @6 v7 e3 o3 g o2 c o1 g"
 
-# SFX 3 - boom: a DESCENDING noise sweep with a fade-out (noise @6, fade-out e5)
-picopilot sfx from-mml 3 "s7 @6 v7 e5 o3 e c o2 g e c o1 g c"
+# SFX 3 - boom: a DESIGNED explosion - DAMPEN body + REVERB tail on a
+# descending noise sweep with a volume decay (noise @6)
+picopilot sfx from-mml 3 "s6 !dampen2 !reverb @6 o3 v7 g o1 c o0 g v6 e v5 c v4 g v3 c v2 g v1 c"
 ```
 
 A tuning note worth its own callout (from actually LISTENING, Step 6): the first
 boom was 8 identical low noise rows and sounded like a MACHINE GUN, not an
-explosion. The fix is a strictly DESCENDING pitch sweep (`o3 e c o2 g e c o1 g
-c`, high falling to low) so the noise "falls" like a real boom. Same idea for the
-hurt: start high and drop. This is the ears loop doing its job: you cannot hear a
-rattle-vs-boom problem in the hex, only by rendering and listening, then
-re-composing the pitch contour.
+explosion. The first fix was a strictly DESCENDING pitch sweep (high falling to
+low) so the noise "falls" like a real boom. But even a maxed-out descending sweep
++ hand-drawn volume decay STILL read as a descending zap, not an explosion: the
+boom needed the two SFX FILTERS `!dampen2` (the low BODY) + `!reverb` (the
+resonant TAIL), which no pitch/volume MML can synthesize (see "The boom hit a
+real tool limit", now CLOSED). With them the same notes finally read as a boom.
+Same descending idea for the hurt: start high and drop. This is the ears loop
+doing its job: you cannot hear a rattle-vs-boom problem in the hex, only by
+rendering and listening, then re-composing the contour AND reaching for the right
+filter.
 
 Each call reports `rows`, `speed`, the `__sfx__` hex row, any rounding `warnings`, and a CTA toward `verify` + `audio render`. Reading one back: `sfx from-mml 0` printed
 
@@ -57,7 +63,8 @@ The row is the finding's layout: header `0006` (`speed 6`), then 5-nibble notes 
 The picopilot-MML I actually used, mapped to intent:
 - `@1`..`@6` picked the timbre (tilted-saw, saw, noise) per sound.
 - `e1` (slide), `e3` (drop), `e5` (fade out) are the PICO-8 effects a score notation could never express, and they are exactly what makes a "jump" sound like a jump.
-- `>` / `<` shift octave; `s<N>` sets the per-SFX speed (a "coin" wants a fast `s6`, a "boom" a slower `s8`).
+- `!dampen2` / `!reverb` on the boom are the SFX FILTERS: the low body + resonant tail that turn `@6` noise from a rattle into an explosion. See the filters section of the `picopilot-audio` skill for all 5 (`!noiz !buzz !detune1/!detune2 !reverb !dampen[2]`).
+- `>` / `<` shift octave; `s<N>` sets the per-SFX speed (a "coin" wants a fast `s6`, a "boom" a slower `s6`).
 
 ## Step 2 - The looping tune: two voices (`sfx from-mml`), then arrange (`music from-patterns`)
 
@@ -188,14 +195,16 @@ The first pass composed the SFX "blind" (no listening). Rendering + actually pla
 - **coin**: ok-ish -> made it a snappier 3-note rise.
 - **jump**: great as-is (the `e1` slide sells it).
 - **hurt**: ok -> started it higher so the drop has further to fall.
-- **boom**: sounded like a MACHINE GUN (8 identical low noise rows) -> recomposed as a strictly descending pitch sweep so it FALLS like an explosion.
+- **boom**: sounded like a MACHINE GUN (8 identical low noise rows) -> recomposed as a strictly descending pitch sweep, THEN given `!dampen2 !reverb` (the SFX filters) for the low body + resonant tail so it finally reads as an explosion, not a zap.
 - **music**: too repetitive (both patterns identical) -> split into an A/B structure (melody A, then a contrasting melody B) over a walking bass.
 
 The lesson: compose, render, LISTEN, re-compose the pitch contour / structure. picopilot makes each turn cheap (one `sfx from-mml` line), but the judgement is yours and needs a real playback.
 
-### The boom hit a real tool limit (a genuine finding, not just skill)
+### The boom hit a real tool limit — now CLOSED (the finding that became a feature)
 
-The boom was pushed to the CEILING of the current grammar: a steep descending pitch "crack" plus a hand-drawn volume DECAY envelope across rows (`v7 v7 v6 v5 v4 v3 v2 v1` on the `@6` noise). That is everything picopilot-MML can do, and it STILL reads as a descending zap, not an explosion. The reason is not composition skill: a real PICO-8 explosion needs the per-SFX FILTERS (DAMPEN for the low "body", REVERB for the resonant tail, NOIZ for the noise texture), and picopilot-MML v2 cannot express them (a conscious deferral in the audio spike, ADR-0005). Pitch and volume envelopes ARE expressible (so those are skill/tedium); the filters are NOT, so the whole class of "designed" sounds (explosion, pad, engine) is out of reach until they are added. This dogfood is exactly the "flag if a v2 use case demands them" trigger, recorded in `work/notes/observations/picopilot-mml-cannot-express-sfx-filters-limits-designed-sounds.md` and drafted as the `audio-mml-sfx-filters` task. It is a clean example of the ears loop earning its keep: the gap is invisible in the hex and only audible on playback.
+The boom was originally pushed to the CEILING of the pre-filter grammar: a steep descending pitch "crack" plus a hand-drawn volume DECAY envelope across rows (`v7 v7 v6 v5 v4 v3 v2 v1` on the `@6` noise). That was everything picopilot-MML could do, and it STILL read as a descending zap, not an explosion. The reason was not composition skill: a real PICO-8 explosion needs the per-SFX FILTERS (DAMPEN for the low "body", REVERB for the resonant tail, NOIZ for the noise texture), which the grammar could not express (a conscious deferral in the audio spike, ADR-0005). This dogfood was exactly the "flag if a v2 use case demands them" trigger, recorded in `work/notes/observations/picopilot-mml-cannot-express-sfx-filters-limits-designed-sounds.md`.
+
+**That gap is now closed.** The `audio-mml-sfx-filters` task decoded the filter byte layout byte-for-byte (finding A.7) and added the 5 filters as `!`-directives, so the boom above is re-authored with `!dampen2 !reverb @6` — the low body + resonant tail — and finally reads as an explosion. Strip the two filters and the SAME notes revert to the descending zap; the filters are the tool, not the composition. It is a clean example of the ears loop earning its keep: the gap was invisible in the hex, only audible on playback, and it drove a real tool improvement.
 
 ## Rough edges found (the real payoff of dogfooding)
 

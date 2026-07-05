@@ -58,7 +58,7 @@ function buildSfxGroup(): Cli.Cli {
 
 	sfx.command('from-mml', {
 		description:
-			'Transpile picopilot-MML text into one __sfx__ slot (0-63) and merge it into the cart (only that slot changes). picopilot-MML is TRACKER-ROW based: a length is a ROW COUNT (l4 = 4 rows), NOT a musical note value, and there is NO tempo/BPM (PICO-8 measures in ticks/row via `s<N>` speed). Notes carry per-note waveform (@0-7, @8-f = custom SFX-instrument), volume (v0-7), and effect (e0-7) that a score notation cannot express. Out-of-range pitch (below C0 / above D#5) and >32 rows are refused loudly, never silently clamped.',
+			'Transpile picopilot-MML text into one __sfx__ slot (0-63) and merge it into the cart (only that slot changes). picopilot-MML is TRACKER-ROW based: a length is a ROW COUNT (l4 = 4 rows), NOT a musical note value, and there is NO tempo/BPM (PICO-8 measures in ticks/row via `s<N>` speed). Notes carry per-note waveform (@0-7, @8-f = custom SFX-instrument), volume (v0-7), and effect (e0-7) that a score notation cannot express. SFX-level FILTER directives reach DESIGNED sounds (explosion/engine/pad): !dampen[2] (low-pass body), !reverb (echo tail), !noiz (@6 white noise), !buzz, !detune1/!detune2. Out-of-range pitch (below C0 / above D#5), >32 rows, and a bad filter level are refused loudly, never silently clamped.',
 		args: z.object({
 			slot: z.coerce
 				.number()
@@ -70,7 +70,7 @@ function buildSfxGroup(): Cli.Cli {
 				.string()
 				.optional()
 				.describe(
-					'The picopilot-MML source (e.g. "s16 @1 v6 c d e f"). Omit and pass --file to read from a file instead. Modal state: @ waveform, v volume, e effect, o octave, l default length (all sticky). Durations are ROWS: c4 = 4 rows (held via tie rows). Loop with {..}; a lone { marks the pattern LEN.',
+					'The picopilot-MML source (e.g. "s16 @1 v6 c d e f"). Omit and pass --file to read from a file instead. Modal state: @ waveform, v volume, e effect, o octave, l default length (all sticky). Durations are ROWS: c4 = 4 rows (held via tie rows). Loop with {..}; a lone { marks the pattern LEN. SFX filters (per-SFX, place anywhere): !dampen/!dampen2, !reverb, !noiz, !buzz, !detune1/!detune2 (e.g. "!dampen !reverb @6 v7 o3 e c o1 g" = an explosion).',
 				),
 		}),
 		options: z.object({
@@ -106,6 +106,11 @@ function buildSfxGroup(): Cli.Cli {
 				.describe(
 					'The header loop-end value (0 = off or the LEN special case).',
 				),
+			filters: z
+				.number()
+				.describe(
+					'The per-SFX FILTER byte (first header byte): the OR of the selected filters, 0 = none.',
+				),
 			row: z
 				.string()
 				.describe('The 168-char __sfx__ text row that was merged.'),
@@ -124,6 +129,11 @@ function buildSfxGroup(): Cli.Cli {
 				description: 'A held note (4 rows) with vibrato into slot 5 of a cart',
 				args: {slot: 5, mml: 's16 @1 v5 e2 c4'},
 				options: {cart: 'game.p8'},
+			},
+			{
+				description:
+					'A DESIGNED explosion: DAMPEN body + REVERB tail on @6 noise',
+				args: {slot: 3, mml: 's7 !dampen2 !reverb @6 v7 o3 e c o1 g c'},
 			},
 			{
 				description: 'Read a longer source from a file',
@@ -172,9 +182,9 @@ function buildSfxGroup(): Cli.Cli {
 				result = mmlToSfxRow(mml);
 			} catch (e) {
 				if (e instanceof AudioMmlError) {
-					// The two structured refusals + parse errors surface as incur's
-					// error envelope with a nonzero exit (never a silent clamp). The CTA
-					// points at the range/cap the author must respect.
+					// The structured refusals + parse errors surface as incur's error
+					// envelope with a nonzero exit (never a silent clamp). The CTA points
+					// at the range/cap/level the author must respect.
 					const cta =
 						e.code === 'audio-mml-pitch-out-of-range'
 							? {
@@ -198,7 +208,19 @@ function buildSfxGroup(): Cli.Cli {
 											},
 										],
 									}
-								: undefined;
+								: e.code === 'audio-mml-filter-level-out-of-range'
+									? {
+											description: 'The SFX filters + their valid levels:',
+											commands: [
+												{
+													command:
+														'sfx from-mml <slot> "!dampen[2] !reverb !noiz !buzz !detune1/!detune2 ..."',
+													description:
+														'!dampen has 2 levels (!dampen/!dampen2); !reverb/!noiz/!buzz are on/off; !detune needs 1 or 2.',
+												},
+											],
+										}
+									: undefined;
 					return error({
 						code: e.code,
 						message: e.message,
@@ -235,6 +257,7 @@ function buildSfxGroup(): Cli.Cli {
 					speed: result.speed,
 					loopStart: result.loopStart,
 					loopEnd: result.loopEnd,
+					filters: result.filters,
 					row: result.row,
 					warnings,
 				},

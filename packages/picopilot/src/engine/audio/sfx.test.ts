@@ -210,6 +210,113 @@ describe('mmlToSfxRow: durations are TRACKER ROWS (finding B.4)', () => {
 	});
 });
 
+describe('mmlToSfxRow: SFX filters (finding A.7) — the first header byte', () => {
+	// The filter byte is the first header byte ([0:2]); mode bit stays 0 (pitch
+	// mode), so the byte = the OR of the selected filter values (finding A.7).
+	it('each single filter sets its verified bit in the header byte', () => {
+		expect(header(mmlToSfxRow('!noiz c').row).slice(0, 2)).toBe('02');
+		expect(header(mmlToSfxRow('!buzz c').row).slice(0, 2)).toBe('04');
+		expect(header(mmlToSfxRow('!detune1 c').row).slice(0, 2)).toBe('08');
+		expect(header(mmlToSfxRow('!detune2 c').row).slice(0, 2)).toBe('10');
+		expect(header(mmlToSfxRow('!reverb c').row).slice(0, 2)).toBe('20');
+		expect(header(mmlToSfxRow('!dampen c').row).slice(0, 2)).toBe('80');
+	});
+
+	it('DAMPEN has 2 levels (default 1); !dampen2 picks level 2 (finding A.7)', () => {
+		expect(header(mmlToSfxRow('!dampen1 c').row).slice(0, 2)).toBe('80');
+		expect(header(mmlToSfxRow('!dampen2 c').row).slice(0, 2)).toBe('c0');
+		// bare !dampen defaults to level 1.
+		expect(header(mmlToSfxRow('!dampen c').row)).toBe(
+			header(mmlToSfxRow('!dampen1 c').row),
+		);
+	});
+
+	it('filters OR together (a designed explosion: !dampen !reverb on @6 noise)', () => {
+		// !dampen (0x80) | !reverb (0x20) = 0xa0: the boom's low body + resonant tail.
+		expect(header(mmlToSfxRow('!dampen !reverb @6 c').row).slice(0, 2)).toBe(
+			'a0',
+		);
+		// !noiz (0x02) | !dampen2 (0xc0) | !reverb (0x20) = 0xe2.
+		expect(
+			header(mmlToSfxRow('!noiz !dampen2 !reverb c').row).slice(0, 2),
+		).toBe('e2');
+	});
+
+	it('the note rows are unchanged by a filter directive (filters are SFX-level)', () => {
+		// The 5-nibble notes match the same MML WITHOUT the filter; only the header
+		// byte differs (finding A.7: filters are per-SFX, not per-note).
+		const withF = mmlToSfxRow('!dampen @6 v7 c d e');
+		const without = mmlToSfxRow('@6 v7 c d e');
+		expect(withF.row.slice(8)).toBe(without.row.slice(8)); // note body identical
+		expect(withF.row.slice(2)).toBe(without.row.slice(2)); // speed/loop identical
+		expect(withF.filters).toBe(0x80);
+		expect(without.filters).toBe(0);
+	});
+
+	it('filters coexist with speed + loop markers in the header', () => {
+		// s8 !dampen { c d e: filter 0x80, speed 8, LEN 3 (single { special case).
+		const {row, filters} = mmlToSfxRow('s8 !dampen { c d e');
+		expect(filters).toBe(0x80);
+		expect(header(row)).toBe('80080300');
+	});
+
+	it('directives are position-independent + case-insensitive', () => {
+		expect(mmlToSfxRow('!dampen c').row).toBe(mmlToSfxRow('c !dampen').row);
+		expect(mmlToSfxRow('!DAMPEN c').row).toBe(mmlToSfxRow('!dampen c').row);
+	});
+});
+
+describe('mmlToSfxRow: filter refusals (finding A.7) — NO silent clamp', () => {
+	it('a DAMPEN level outside 1..2 is audio-mml-filter-level-out-of-range', () => {
+		try {
+			mmlToSfxRow('!dampen3 c');
+			throw new Error('expected a throw');
+		} catch (e) {
+			expect(e).toBeInstanceOf(AudioMmlError);
+			expect((e as AudioMmlError).code).toBe(
+				'audio-mml-filter-level-out-of-range',
+			);
+			expect((e as AudioMmlError).message).toContain('DAMPEN');
+		}
+	});
+
+	it('a DAMPEN level of 0 / 3 is refused', () => {
+		expect(() => mmlToSfxRow('!dampen0 c')).toThrow(AudioMmlError);
+		expect(() => mmlToSfxRow('!dampen9 c')).toThrow(AudioMmlError);
+	});
+
+	it('a level on a levelless filter (!noiz2 / !buzz1 / !reverb2) is refused', () => {
+		expect(() => mmlToSfxRow('!noiz2 c')).toThrow(AudioMmlError);
+		expect(() => mmlToSfxRow('!reverb2 c')).toThrow(AudioMmlError);
+		try {
+			mmlToSfxRow('!buzz1 c');
+			throw new Error('expected a throw');
+		} catch (e) {
+			expect((e as AudioMmlError).code).toBe(
+				'audio-mml-filter-level-out-of-range',
+			);
+		}
+	});
+
+	it('!detune requires an explicit 1 or 2 (two distinct sub-modes, not a level)', () => {
+		expect(() => mmlToSfxRow('!detune c')).toThrow(AudioMmlError);
+		expect(() => mmlToSfxRow('!detune3 c')).toThrow(AudioMmlError);
+		expect(header(mmlToSfxRow('!detune1 c').row).slice(0, 2)).toBe('08');
+		expect(header(mmlToSfxRow('!detune2 c').row).slice(0, 2)).toBe('10');
+	});
+
+	it('an unknown filter name is a parse error listing the 5 filters', () => {
+		try {
+			mmlToSfxRow('!wobble c');
+			throw new Error('expected a throw');
+		} catch (e) {
+			expect(e).toBeInstanceOf(AudioMmlError);
+			expect((e as AudioMmlError).code).toBe('audio-mml-parse-error');
+			expect((e as AudioMmlError).message).toContain('!noiz');
+		}
+	});
+});
+
 describe('mmlToSfxRow: loop markers (finding A.1, B.5)', () => {
 	it('no markers -> loop off (0 0)', () => {
 		expect(header(mmlToSfxRow('c d e').row)).toBe('00100000');
