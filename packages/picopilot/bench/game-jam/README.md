@@ -33,6 +33,8 @@ Options: `--theme <t>` (else random from `themes.txt`), `--minutes <n>` (default
 ## Known rough edges (v1 prototype)
 
 - **Steering granularity is between-turns.** A reminder lands when the current turn ENDS, so a very long turn can overshoot a threshold. Fine-grained mid-turn steering would need `pi --mode rpc` streaming (a v2 refinement).
-- **"Playable" is only partly automatable.** Tier 0/1 (boots, responds to input) is objective; "is it a fun game" is the judge-agent's call (or a human's). The `run --input` response check is heuristic (screenshots differ).
+- **"Playable" is only partly automatable.** Tier 0/1 (boots, player-visible, reaches play) is objective; "is it a fun game" is the judge-agent's call (or a human's).
+- **Live-gameplay capture uses an input-transform** (`drive-capture.sh`): it redefines the entry's `btn`/`btnp` (on a throwaway copy) to read a harness-piped serial channel and drives the cart into active play, so `shots-play/` shows real gameplay (not the title). Its generic input drives one-button/runner/flappy shapes; a game with an unusual control scheme may need a per-entry input spec.
+- **Invisible-player guard.** `check-playable.sh` flags `spr(n)` on an empty sprite (an invisible player); the harness steers the agent to fix it, and the prompt tells the agent to draw what it `spr()`s (or use primitives).
 - **Audio can't be judged headlessly** (ADR-0009: recording needs a real A/V session), so audio is not scored beyond "it's present".
 - A real 50-minute run costs real model tokens/time; use `--minutes 3 --no-judge` to smoke-test the harness mechanics cheaply.

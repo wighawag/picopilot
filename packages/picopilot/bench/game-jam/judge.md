@@ -6,9 +6,9 @@ TIME BUDGET: __MINUTES__ minutes
 You are given, in this folder:
 - `main.p8` and `main.lua` (the game; the code is `main.lua`, the cart is `main.p8`).
 - `JAM.md` (the entrant's own description of the interpretation / mechanic / controls), if they wrote one.
-- `bench-artifacts/` (harness output): `boot.json` (did it boot headless via picopilot run), screenshots `*.png` from a fresh run and from a scripted-input run, and `verify.json` (static gate).
+- `bench-artifacts/` (harness output): `boot.json` (did it boot headless), `verify.json` (static gate), `playable.txt` (the invisible-player lint), `shots-fresh/` (screenshots of a plain run, usually the title/attract screen), and `shots-play/` (`play0/1/2.png`, screenshots of LIVE gameplay: the harness transformed the cart's input to a driven channel and drove it into active play, so these show the game actually being played).
 
-FIRST read `main.lua`, `JAM.md`, and LOOK at the screenshots. If you can drive it, note whether the input-run screenshots differ from the fresh-run ones (does it respond to the player?). The harness has already recorded objective Tier-0/1 results in `bench-artifacts/`; use them, do not re-run anything.
+FIRST read `main.lua`, `JAM.md`, and LOOK at the screenshots, ESPECIALLY `shots-play/` (live gameplay). Confirm you can SEE the player and that the game is in its play state (not stuck on the title). The harness has already recorded objective Tier-0/1 results in `bench-artifacts/`; use them, do not re-run anything.
 
 Score the entry on this rubric. Each axis is 1-5 (1 = absent/broken, 3 = competent, 5 = excellent), with a one-sentence justification each:
 

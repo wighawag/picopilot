@@ -45,14 +45,23 @@ if [ -z "$THEME" ]; then
   THEME="$(grep -vE '^\s*(#|$)' "$HERE/themes.txt" | shuf -n1)"
 fi
 
-# Workdir: an isolated scratch dir the agent builds in.
+SLUG="$(echo "$THEME" | tr ' A-Z' '-a-z' | tr -cd 'a-z0-9-')"
+
+# Workdir: a PERSISTENT, named dir under bench/out/ (so entries are never lost
+# and runs are comparable), unless the caller overrides it.
 if [ -z "$WORKDIR" ]; then
-  WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/picopilot-jam-XXXXXX")"
+  WORKDIR="$HERE/../out/${SLUG}-$(date +%Y%m%d-%H%M%S)"
 fi
 mkdir -p "$WORKDIR/bench-artifacts"
+WORKDIR="$(cd "$WORKDIR" && pwd)"
 ART="$WORKDIR/bench-artifacts"
 
-SLUG="$(echo "$THEME" | tr ' A-Z' '-a-z' | tr -cd 'a-z0-9-')"
+# Resolve the PICO-8 binary for the drive-capture (which shells out to pico8
+# directly). picopilot itself uses PICO8_PATH; mirror that resolution here.
+PICO8="${PICO8_PATH:-}"
+[ -z "$PICO8" ] && PICO8="$HOME/.AppImages/pico-8/pico8"
+[ -x "$PICO8" ] || PICO8="$(command -v pico8 2>/dev/null || echo pico8)"
+
 SID="jam-${SLUG}-$(date +%s)"
 MODEL_ARGS=()
 [ -n "$MODEL" ] && MODEL_ARGS=(--model "$MODEL")
@@ -167,9 +176,13 @@ LUA
   }
   echo ">>> boot + screenshot check (fresh, auto-instrumented)..."
   instrument_and_run "" "$ART/shots-fresh" > "$ART/boot.json" 2>&1 || true
-  echo ">>> input-response check (scripted playtest, auto-instrumented)..."
-  instrument_and_run "zzzzzrrrzz" "$ART/shots-input" > "$ART/boot-input.json" 2>&1 || true
   rm -rf "$ART/_probe"
+  # LIVE-gameplay capture: transform the cart's btn/btnp to a harness-driven
+  # serial channel and drive it into active play, so the judge sees real
+  # gameplay (not the title screen). Spike-verified; see drive-capture.sh.
+  echo ">>> live-gameplay capture (drive-transform via serial 0x804)..."
+  bash "$HERE/drive-capture.sh" "$PICO8" "$WORKDIR" "$ART/shots-play" > "$ART/drive.txt" 2>&1 || true
+  cat "$ART/drive.txt" 2>/dev/null | tail -1
 
   echo ">>> playability lint (invisible-player / empty-sprite check)..."
   bash "$HERE/check-playable.sh" "$PICOPILOT_BIN" "$WORKDIR" > "$ART/playable.txt" 2>&1 || true
@@ -194,6 +207,6 @@ echo " artifacts: $ART"
 echo " verify:    $(grep -oE '"status"[: ]+"[a-z-]*"' "$ART/verify.json" 2>/dev/null | head -1)"
 echo " tokens:    $(grep -oE '"tokens"[: ]+[0-9]+' "$ART/tokens.json" 2>/dev/null | head -1)"
 echo " booted:    $(grep -oE '"exitReason"[: ]+"[a-z]*"' "$ART/boot.json" 2>/dev/null | head -1)"
-echo " shots:     fresh=$(ls "$ART/shots-fresh"/*.png 2>/dev/null | wc -l) input=$(ls "$ART/shots-input"/*.png 2>/dev/null | wc -l)"
+echo " shots:     fresh=$(ls "$ART/shots-fresh"/*.png 2>/dev/null | wc -l) gameplay=$(ls "$ART/shots-play"/*.png 2>/dev/null | wc -l)"
 echo " playable:  $(grep -oE 'PLAYABLE-CHECK: (ok|issues [0-9]+)' "$ART/playable.txt" 2>/dev/null | head -1)"
 echo "=================================================================="
