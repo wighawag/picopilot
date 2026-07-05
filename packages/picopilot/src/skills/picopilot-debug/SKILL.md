@@ -68,6 +68,32 @@ Load-bearing details (each an easy wrong guess, all tested):
 - Screenshots go to a run-controlled dir (`--shot-dir`, default an isolated temp
   dir), never `~/Desktop`.
 
+### Scripted playtests: `run --input`
+
+To automate a gameplay check ("press right x5 then jump, screenshot, did the
+player clear the gap?"), pass a one-shot input string with `--input`; it reaches
+the cart as the `-p` launch parameter, which the cart reads via `stat(6)`. Same
+cooperation model as screenshots: the cart decodes the string and replays it as
+button presses. A minimal harness that replays one char per frame:
+
+```lua
+-- stat(6) is the -p launch param string; replay it, one char/frame
+script=stat(6)
+fi=0
+function btn_scripted(b)
+ local c=sub(script,flr(fi)+1,flr(fi)+1)
+ -- map chars to buttons: l r u d z x  (adapt to your scheme)
+ return (b==0 and c=="l") or (b==1 and c=="r") or (b==2 and c=="u")
+     or (b==3 and c=="d") or (b==4 and c=="z") or (b==5 and c=="x")
+end
+-- in _update: advance fi, use btn_scripted(n) instead of btn(n); screenshot at
+-- marked frames; printh the sentinel when the script is exhausted.
+```
+
+Then: `picopilot run main.p8 --input "rrrrrz"` feeds the script, captures the
+screenshots, and ends on the sentinel. This is the one-shot canned channel (the
+string is fixed at launch); it is enough for deterministic scripted checks.
+
 ## The two structured boundaries
 
 Both dependency boundaries are soft and well-signposted, so read the result, do

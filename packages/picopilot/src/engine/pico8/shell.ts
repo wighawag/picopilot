@@ -119,7 +119,14 @@ export class ShellPico8Adapter implements Pico8Adapter {
 
 	run(options: RunOptions): Promise<Pico8Result> {
 		const [file, ...rest] = pico8Candidates(this.env) as [string, ...string[]];
-		const args = ['-desktop', options.shotDir, '-x', options.cartPath];
+		const args = [
+			'-desktop',
+			options.shotDir,
+			'-x',
+			options.cartPath,
+			// One-shot scripted input (the cart reads it via stat(6)); omitted if absent.
+			...(options.input !== undefined ? ['-p', options.input] : []),
+		];
 		const watcher = new SentinelWatcher(options.sentinel);
 
 		return new Promise<Pico8Result>((resolve) => {

@@ -72,6 +72,13 @@ export interface RunOptions {
 	readonly sentinel?: string;
 	/** The hard backstop in ms: kill PICO-8 if it neither signals nor exits by then. */
 	readonly backstopMs: number;
+	/**
+	 * Optional one-shot scripted input passed as `-p <input>`; the cart reads it
+	 * via `stat(6)` and replays it (the canned-playtest channel). The cart must
+	 * cooperate by decoding `stat(6)` (taught in the `picopilot-debug` skill).
+	 * Absent = no input passed.
+	 */
+	readonly input?: string;
 }
 
 /**

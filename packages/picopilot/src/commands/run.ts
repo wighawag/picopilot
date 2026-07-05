@@ -77,6 +77,12 @@ export function registerRun(
 				.describe(
 					'Safety backstop: kill PICO-8 after this many ms if it never signals.',
 				),
+			input: z
+				.string()
+				.optional()
+				.describe(
+					'One-shot scripted input passed as `-p` (the cart reads it via stat(6)) for automated playtests.',
+				),
 		}),
 		// incur resolves these from the (test-overridable) env source and hands
 		// them to the child, so PICO8_PATH/PATH locate the binary in isolation.
@@ -141,6 +147,7 @@ export function registerRun(
 				shotDir,
 				sentinel: options.sentinel,
 				backstopMs: options.backstopMs,
+				input: options.input,
 			});
 
 			if (!result.ok) {

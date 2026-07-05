@@ -135,6 +135,15 @@ describe('picopilot run: shotDir isolation (never ~/Desktop)', () => {
 		expect(existsSync(shotDir)).toBe(true);
 	});
 
+	it('threads --input through to the adapter (the one-shot playtest channel)', async () => {
+		const seen: {options?: RunOptions} = {};
+		await runRun(
+			() => stubAdapter(ranWith('sentinel'), seen),
+			['run', cartPath, '--input', 'rrrrz', '--json'],
+		);
+		expect(seen.options?.input).toBe('rrrrz');
+	});
+
 	it('honours an explicit --shot-dir', async () => {
 		const seen: {options?: RunOptions} = {};
 		const chosen = join(dir, 'shots');

@@ -101,6 +101,44 @@ describe('ShellPico8Adapter: sentinel-driven termination', () => {
 		expect(proc.killed).toBe(true); // killed promptly, not after the backstop
 	});
 
+	it('passes --input through as `-p <input>` in the spawn args (playtest channel)', async () => {
+		const proc = new FakeProcess();
+		let spawnArgs: string[] = [];
+		const spawn: SpawnRunner = (_file, args) => {
+			spawnArgs = args;
+			return proc;
+		};
+		const adapter = new ShellPico8Adapter({env: {}, spawn});
+		const resultP = adapter.run({
+			cartPath: '/x/m.p8',
+			shotDir,
+			backstopMs: 9999,
+			input: 'rrrrz',
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		await resultP;
+		expect(spawnArgs).toContain('-p');
+		expect(spawnArgs[spawnArgs.indexOf('-p') + 1]).toBe('rrrrz');
+	});
+
+	it('omits `-p` when no input is given', async () => {
+		const proc = new FakeProcess();
+		let spawnArgs: string[] = [];
+		const spawn: SpawnRunner = (_file, args) => {
+			spawnArgs = args;
+			return proc;
+		};
+		const adapter = new ShellPico8Adapter({env: {}, spawn});
+		const resultP = adapter.run({
+			cartPath: '/x/m.p8',
+			shotDir,
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		await resultP;
+		expect(spawnArgs).not.toContain('-p');
+	});
+
 	it('captures printh stdout in the report', async () => {
 		const proc = new FakeProcess();
 		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
