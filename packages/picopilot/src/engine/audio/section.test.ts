@@ -1,15 +1,17 @@
 import {describe, expect, it} from 'vitest';
 
 import {Cart} from '../cart/index.js';
-import {mergeSfxRow} from './section.js';
+import {mergeSfxRow, setMusicSection} from './section.js';
+import {patternsToMusic} from './music.js';
 import {mmlToSfxRow, SFX_ROW_LENGTH} from './sfx.js';
 
 /** A minimal valid cart, optionally with an existing __sfx__ body + other sections. */
-function cart(opts?: {sfx?: string; withGfx?: boolean}): Cart {
+function cart(opts?: {sfx?: string; music?: string; withGfx?: boolean}): Cart {
 	let text =
 		'pico-8 cartridge // http://www.pico-8.com\nversion 42\n__lua__\nprint("hi")\n';
 	if (opts?.withGfx) text += '__gfx__\n0000\n';
 	if (opts?.sfx !== undefined) text += `__sfx__\n${opts.sfx}`;
+	if (opts?.music !== undefined) text += `__music__\n${opts.music}`;
 	return Cart.parse(text);
 }
 
@@ -73,6 +75,40 @@ describe('mergeSfxRow: leaves every OTHER section byte-identical', () => {
 		);
 		expect(after).toContain('print("hi")');
 		expect(after).toContain('__gfx__\n0000\n');
+	});
+});
+
+describe('setMusicSection: writes __music__ + leaves other sections identical', () => {
+	const BODY = patternsToMusic([
+		{channels: [0, 1, 2, 3], loopStart: true},
+		{channels: [4, null, 5, 6], loopBack: true, stop: true},
+	]).section;
+
+	it('creates the __music__ section when absent', () => {
+		const c = cart();
+		setMusicSection(c, BODY);
+		expect(c.getSection('music')).toBe(BODY);
+	});
+
+	it('replaces an existing __music__ body wholesale', () => {
+		const c = cart({music: '00 00000000\n'});
+		setMusicSection(c, BODY);
+		expect(c.getSection('music')).toBe(BODY);
+	});
+
+	it('leaves __sfx__ (and lua + gfx + header) BYTE-IDENTICAL', () => {
+		const sfxRow = mmlToSfxRow('s8 @1 v6 c d e').row;
+		const c = cart({withGfx: true, sfx: `${sfxRow}\n`});
+		const before = c.serialize();
+		const sfxBefore = c.getSection('sfx');
+		setMusicSection(c, BODY);
+		// __sfx__ is untouched.
+		expect(c.getSection('sfx')).toBe(sfxBefore);
+		// Everything up to where __music__ was appended is byte-identical.
+		expect(c.serialize().startsWith(before)).toBe(true);
+		expect(c.serialize()).toContain('print("hi")');
+		expect(c.serialize()).toContain('__gfx__\n0000\n');
+		expect(c.serialize()).toContain(`__sfx__\n${sfxRow}\n`);
 	});
 });
 

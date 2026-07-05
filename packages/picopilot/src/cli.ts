@@ -3,6 +3,7 @@ import {registerGfx} from './commands/gfx.js';
 import {registerInit} from './commands/init.js';
 import {registerLint} from './commands/lint.js';
 import {registerMinify} from './commands/minify.js';
+import {registerMusic} from './commands/music.js';
 import {registerRun} from './commands/run.js';
 import {registerSfx} from './commands/sfx.js';
 import {registerTokens} from './commands/tokens.js';
@@ -46,6 +47,7 @@ export function createCli(): Cli.Cli {
 	registerVerify(cli);
 	registerRun(cli);
 	registerSfx(cli);
+	registerMusic(cli);
 
 	return cli;
 }
