@@ -20,6 +20,16 @@ import {
 	SHEET_RENDER_SCALE,
 	SPRITE_RENDER_SCALE,
 } from '../engine/gfx/index.js';
+import {
+	type ShrinkoAdapter,
+	ShellShrinkoAdapter,
+} from '../engine/shrinko/index.js';
+
+/** Injects the shrinko adapter `gfx import`/`gfx export` use (the spritesheet round-trip). */
+export type ShrinkoAdapterFactory = (env: NodeJS.ProcessEnv) => ShrinkoAdapter;
+
+const defaultShrinkoFactory: ShrinkoAdapterFactory = (env) =>
+	new ShellShrinkoAdapter({env});
 
 /**
  * The exit code for the `map-overlap` refusal. Chosen as 1 (a plain failure),
@@ -89,7 +99,7 @@ function loadCart(
  * group, which also gives the `gfx.set.options.allowMapOverlap` config path its
  * `picopilot.json` reads through (incur keys config by command path).
  */
-function buildGfxGroup(): Cli.Cli {
+function buildGfxGroup(shrinkoFactory: ShrinkoAdapterFactory): Cli.Cli {
 	const gfx = Cli.create('gfx', {
 		description:
 			'Read and write sprites as a readable char grid (the pixel-art EDIT surface).',
@@ -462,6 +472,156 @@ function buildGfxGroup(): Cli.Cli {
 		},
 	});
 
+	// gfx export: the raw 128x128 spritesheet PNG round-trip for external tools
+	// (shrinko-backed; DISTINCT from `gfx render`'s upscaled JUDGE image).
+	gfx.command('export', {
+		description:
+			'Export the cart spritesheet as a raw 128x128 PNG for external tools (via shrinko). Requires shrinko.',
+		args: z.object({
+			cart: z
+				.string()
+				.default('main.p8')
+				.describe('The .p8 cart to export from. Defaults to main.p8.'),
+		}),
+		options: z.object({
+			out: z
+				.string()
+				.optional()
+				.describe(
+					'Output PNG path. Defaults to <name>-sheet.png next to the cart.',
+				),
+			force: z
+				.boolean()
+				.default(false)
+				.describe(
+					'Overwrite an existing output PNG. Default off (no-clobber).',
+				),
+		}),
+		env: z.object({
+			PATH: z.string().optional().describe('Used to locate shrinko8.'),
+		}),
+		output: z.object({
+			outPath: z
+				.string()
+				.describe('Absolute path of the spritesheet PNG written.'),
+		}),
+		examples: [{description: 'Export main.p8 spritesheet to main-sheet.png'}],
+		async run({args, options, env, error, ok}) {
+			const cartPath = isAbsolute(args.cart)
+				? args.cart
+				: resolve(process.cwd(), args.cart);
+			if (!existsSync(cartPath)) {
+				return error({
+					code: 'cart-not-found',
+					message: `no cart at ${cartPath}`,
+					exitCode: 1,
+				});
+			}
+			const outPath =
+				options.out !== undefined
+					? isAbsolute(options.out)
+						? options.out
+						: resolve(process.cwd(), options.out)
+					: join(
+							dirname(cartPath),
+							`${basename(cartPath, extname(cartPath))}-sheet.png`,
+						);
+			if (existsSync(outPath) && !options.force) {
+				return error({
+					code: 'output-exists',
+					message: `refusing to overwrite existing ${outPath}; pass --force to overwrite`,
+					exitCode: 1,
+				});
+			}
+			const result = await shrinkoFactory(
+				env as NodeJS.ProcessEnv,
+			).exportSpritesheet(cartPath, outPath);
+			if (!result.ok) {
+				return error({
+					code: result.reason,
+					message: `shrinko is not installed. ${result.remedy} (needs: ${result.needs.join(', ')})`,
+					exitCode: 1,
+				});
+			}
+			return ok({outPath});
+		},
+	});
+
+	// gfx import: merge an external spritesheet PNG back into the cart's __gfx__.
+	// MERGE (not replace): code/map/sfx/music are preserved; only gfx changes.
+	gfx.command('import', {
+		description:
+			"Import a 128x128 spritesheet PNG into the cart's __gfx__ (merge; via shrinko). Requires shrinko.",
+		args: z.object({
+			png: z.string().describe('The spritesheet PNG to import.'),
+			cart: z
+				.string()
+				.default('main.p8')
+				.describe('The .p8 cart to import INTO. Defaults to main.p8.'),
+		}),
+		options: z.object({
+			out: z
+				.string()
+				.optional()
+				.describe(
+					'Output cart. Defaults to writing back into the cart in place (like `gfx set`).',
+				),
+		}),
+		env: z.object({
+			PATH: z.string().optional().describe('Used to locate shrinko8.'),
+		}),
+		output: z.object({
+			outPath: z
+				.string()
+				.describe('The cart written (the source cart when in place).'),
+		}),
+		examples: [
+			{description: 'Import sheet.png into main.p8', args: {png: 'sheet.png'}},
+		],
+		async run({args, options, env, error, ok}) {
+			const cartPath = isAbsolute(args.cart)
+				? args.cart
+				: resolve(process.cwd(), args.cart);
+			const pngPath = isAbsolute(args.png)
+				? args.png
+				: resolve(process.cwd(), args.png);
+			if (!existsSync(cartPath)) {
+				return error({
+					code: 'cart-not-found',
+					message: `no cart at ${cartPath}`,
+					exitCode: 1,
+				});
+			}
+			if (!existsSync(pngPath)) {
+				return error({
+					code: 'png-not-found',
+					message: `no PNG at ${pngPath}`,
+					exitCode: 1,
+				});
+			}
+			// Default: write back into the cart in place, matching `gfx set` (import IS
+			// a gfx edit that produces the readable cart, not a build artifact). `--out`
+			// writes a separate cart instead.
+			const outPath =
+				options.out !== undefined
+					? isAbsolute(options.out)
+						? options.out
+						: resolve(process.cwd(), options.out)
+					: cartPath;
+			const result = await shrinkoFactory(
+				env as NodeJS.ProcessEnv,
+			).importSpritesheet(cartPath, pngPath, outPath);
+			if (!result.ok) {
+				return error({
+					code: result.reason,
+					message: `shrinko is not installed. ${result.remedy} (needs: ${result.needs.join(', ')})`,
+					exitCode: 1,
+				});
+			}
+			return ok({outPath});
+		},
+	});
+
 	return gfx;
 }
 
@@ -477,6 +637,9 @@ function buildGfxGroup(): Cli.Cli {
  * shrinko-free: a pure-TS hex->PNG encoder using PICO-8's fixed 16-colour palette
  * (the eyes-loop stays dependency-light, ADR/US #7).
  */
-export function registerGfx(cli: Cli.Cli): void {
-	cli.command(buildGfxGroup());
+export function registerGfx(
+	cli: Cli.Cli,
+	shrinkoFactory: ShrinkoAdapterFactory = defaultShrinkoFactory,
+): void {
+	cli.command(buildGfxGroup(shrinkoFactory));
 }

@@ -2,7 +2,10 @@ import {execFile} from 'node:child_process';
 
 import {
 	type CountReport,
+	type LintReport,
+	type MinifyReport,
 	parseCount,
+	parseLint,
 	type ShrinkoAdapter,
 	type ShrinkoResult,
 	shrinkoNotFound,
@@ -118,6 +121,86 @@ export class ShellShrinkoAdapter implements ShrinkoAdapter {
 			ok: true,
 			value: parseCount(`${outcome.stdout}\n${outcome.stderr}`),
 		};
+	}
+
+	async lint(cartPath: string): Promise<ShrinkoResult<LintReport>> {
+		// `-l` lints; it exits nonzero (2) WHEN it finds warnings, which is a normal
+		// result (findings are data), NOT a spawn failure. Only a spawnError means
+		// shrinko is absent, so we key absence off `outcome === undefined`, and parse
+		// the warnings regardless of the (0-or-2) exit code.
+		const outcome = await this.invoke([cartPath, '-l']);
+		if (outcome === undefined) {
+			return shrinkoNotFound();
+		}
+		return {
+			ok: true,
+			value: parseLint(`${outcome.stdout}\n${outcome.stderr}`),
+		};
+	}
+
+	async minify(
+		cartPath: string,
+		outPath: string,
+	): Promise<ShrinkoResult<MinifyReport>> {
+		// Count the source first (the "before"): if shrinko is absent, this returns
+		// the not-found value and we never write anything.
+		const before = await this.count(cartPath);
+		if (!before.ok) return before;
+
+		// Minify SAFE-only (ADR-0007): the three safe-only knobs keep rename/reorder/
+		// builtins behaviour-preserving. Output goes to a SEPARATE cart (outPath).
+		const out = await this.invoke([
+			cartPath,
+			'-m',
+			'--rename-safe-only',
+			'--reorder-safe-only',
+			'--builtins-safe-only',
+			outPath,
+		]);
+		if (out === undefined) return shrinkoNotFound();
+
+		// Count the artifact (the "after"). It exists now, so this is a normal count.
+		const after = await this.count(outPath);
+		if (!after.ok) return after;
+
+		return {
+			ok: true,
+			value: {
+				beforeTokens: before.value.tokens,
+				afterTokens: after.value.tokens,
+				outPath,
+			},
+		};
+	}
+
+	async exportSpritesheet(
+		cartPath: string,
+		pngPath: string,
+	): Promise<ShrinkoResult<void>> {
+		// `<cart> <out.png> -f spritesheet` writes the 128x128 spritesheet PNG.
+		const outcome = await this.invoke([cartPath, pngPath, '-f', 'spritesheet']);
+		if (outcome === undefined) return shrinkoNotFound();
+		return {ok: true, value: undefined};
+	}
+
+	async importSpritesheet(
+		srcCartPath: string,
+		pngPath: string,
+		outCartPath: string,
+	): Promise<ShrinkoResult<void>> {
+		// `<cart> <out.p8> --merge <png> gfx spritesheet` merges ONLY the gfx section
+		// from the PNG into the source cart, preserving code/map/sfx/music. (A plain
+		// `-F spritesheet` would drop everything but gfx, wiping the user's code.)
+		const outcome = await this.invoke([
+			srcCartPath,
+			outCartPath,
+			'--merge',
+			pngPath,
+			'gfx',
+			'spritesheet',
+		]);
+		if (outcome === undefined) return shrinkoNotFound();
+		return {ok: true, value: undefined};
 	}
 
 	/**

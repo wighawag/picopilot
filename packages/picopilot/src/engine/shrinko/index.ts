@@ -10,7 +10,11 @@
  */
 export {
 	type CountReport,
+	type LintFinding,
+	type LintReport,
+	type MinifyReport,
 	parseCount,
+	parseLint,
 	SHRINKO_NEEDS,
 	SHRINKO_REMEDY,
 	type ShrinkoAdapter,

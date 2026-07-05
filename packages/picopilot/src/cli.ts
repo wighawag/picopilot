@@ -1,6 +1,8 @@
 import {Cli} from 'incur';
 import {registerGfx} from './commands/gfx.js';
 import {registerInit} from './commands/init.js';
+import {registerLint} from './commands/lint.js';
+import {registerMinify} from './commands/minify.js';
 import {registerRun} from './commands/run.js';
 import {registerTokens} from './commands/tokens.js';
 import {registerVerify} from './commands/verify.js';
@@ -38,6 +40,8 @@ export function createCli(): Cli.Cli {
 	registerInit(cli);
 	registerGfx(cli);
 	registerTokens(cli);
+	registerLint(cli);
+	registerMinify(cli);
 	registerVerify(cli);
 	registerRun(cli);
 

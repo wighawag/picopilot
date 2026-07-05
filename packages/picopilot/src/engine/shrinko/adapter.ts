@@ -84,6 +84,70 @@ export interface ShrinkoAdapter {
 	 * shrinko is not installed.
 	 */
 	count(cartPath: string): Promise<ShrinkoResult<CountReport>>;
+
+	/**
+	 * Runs shrinko's `--lint` on the cart at `cartPath` and parses the warnings
+	 * (undefined globals, unused/duplicate locals, etc.) into structured
+	 * {@link LintFinding}s. Lint warnings are DATA, not a failure: the report is
+	 * returned with `findings` (possibly empty), not a throw. Returns
+	 * {@link ShrinkoNotFound} when shrinko is not installed.
+	 */
+	lint(cartPath: string): Promise<ShrinkoResult<LintReport>>;
+
+	/**
+	 * Runs shrinko's SAFE minification on `cartPath` and writes the result to
+	 * `outPath` (a SEPARATE artifact; the source is never touched, see ADR-0007).
+	 * Returns the before/after token counts. Returns {@link ShrinkoNotFound} when
+	 * shrinko is not installed.
+	 */
+	minify(
+		cartPath: string,
+		outPath: string,
+	): Promise<ShrinkoResult<MinifyReport>>;
+
+	/**
+	 * Exports the cart's spritesheet as a 128x128 PNG to `pngPath` (a raw
+	 * round-trip image for external tools, distinct from `gfx render`'s upscaled
+	 * JUDGE image). Returns {@link ShrinkoNotFound} when shrinko is not installed.
+	 */
+	exportSpritesheet(
+		cartPath: string,
+		pngPath: string,
+	): Promise<ShrinkoResult<void>>;
+
+	/**
+	 * Imports a 128x128 spritesheet PNG into `srcCartPath`'s `__gfx__`, MERGING
+	 * (only the gfx section is replaced; code/map/sfx/music are preserved) and
+	 * writing the result to `outCartPath`. Returns {@link ShrinkoNotFound} when
+	 * shrinko is not installed.
+	 */
+	importSpritesheet(
+		srcCartPath: string,
+		pngPath: string,
+		outCartPath: string,
+	): Promise<ShrinkoResult<void>>;
+}
+
+/** One shrinko lint warning, parsed from a `file:line:col: message` line. */
+export interface LintFinding {
+	readonly line: number;
+	readonly col: number;
+	readonly message: string;
+}
+
+/** The parsed `--lint` result: every warning shrinko reported (empty when clean). */
+export interface LintReport {
+	readonly findings: readonly LintFinding[];
+}
+
+/** The parsed `minify` result: token counts before and after (ADR-0007's delta report). */
+export interface MinifyReport {
+	/** Tokens in the source cart. */
+	readonly beforeTokens: number;
+	/** Tokens in the minified artifact. */
+	readonly afterTokens: number;
+	/** Absolute path of the written minified cart. */
+	readonly outPath: string;
 }
 
 /** The frozen {@link ShrinkoNotFound} value, so every call site returns the same shape. */
@@ -116,8 +180,8 @@ export function shrinkoNotFound(): ShrinkoNotFound {
  */
 export function parseCount(output: string): CountReport {
 	const line = (label: string): {n: number; pct: number} | undefined => {
-		// `label: <count> <pct>%` — count and percent may be separated by any run
-		// of spaces; the `%` is optional-tolerant but shrinko always prints it.
+		// `label: <count> <pct>%` (count and percent may be separated by any run
+		// of spaces; the `%` is optional-tolerant but shrinko always prints it).
 		const re = new RegExp(`^\\s*${label}:\\s*(\\d+)\\s+(\\d+)\\s*%`, 'm');
 		const m = re.exec(output);
 		if (m === null) return undefined;
@@ -141,6 +205,29 @@ export function parseCount(output: string): CountReport {
 		compressed: compressed?.n,
 		compressedPct: compressed?.pct,
 	};
+}
+
+/**
+ * Parses shrinko's `--lint` output into {@link LintFinding}s. shrinko prints a
+ * `Lint warnings:` header then one `file:line:col: message` per warning; a clean
+ * cart prints nothing. Parsing scans the combined stdout+stderr for the
+ * `:line:col: message` shape (tolerant of the filename prefix, which we drop),
+ * so an empty result is a CLEAN cart, not an error. Unlike parseCount this never
+ * throws: no recognisable lines simply means zero findings.
+ */
+export function parseLint(output: string): LintReport {
+	const findings: LintFinding[] = [];
+	// Match `<anything>:<line>:<col>: <message>` (the filename may itself contain
+	// colons/paths, so anchor on the two trailing numeric groups before the msg).
+	const re = /:(\d+):(\d+):\s*(.+?)\s*$/gm;
+	for (const m of output.matchAll(re)) {
+		findings.push({
+			line: Number(m[1]),
+			col: Number(m[2]),
+			message: m[3] ?? '',
+		});
+	}
+	return {findings};
 }
 
 /**
