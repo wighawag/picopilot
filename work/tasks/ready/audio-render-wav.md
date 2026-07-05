@@ -41,3 +41,7 @@ End-to-end vertical (engine/pico8 render -> command -> structured result -> test
 > Seam to test at: (1) pico8-absent -> structured `pico8-not-found` + nonzero (the CI test); (2) the render invocation unit-tested against an injected FAKE pico8 runner (assert it forms the right export call + returns the WAV path), no real binary in CI; (3) output-dir isolation (temp, shared dirs untouched). Live WAV render is manual/opt-in. Done = an agent can render a cart's audio to a WAV path, or gets a clean pico8-not-found when PICO-8 is absent.
 >
 > RECORD non-obvious decisions in a `## Decisions` block (the exact PICO-8 export mechanism chosen, the render-target selection surface, envelope shape, output-dir default/flag). If PICO-8's export forces a surprising, hard-to-reverse shape, consider an ADR (`ADR-FORMAT.md`).
+
+## Requeue 2026-07-05
+
+Superseded by audio-record-and-render: PICO-8 offline WAV -export is broken upstream (SIGFPE, cross-platform); audio-to-WAV is now record-based per ADR-0009 + finding pico8-audio-wav-export-and-record. This task is retired.
