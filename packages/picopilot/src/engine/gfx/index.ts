@@ -15,6 +15,12 @@ export {
 	nibblesToGrid,
 	TRANSPARENT_CHAR,
 } from './grid.js';
+export {
+	LABEL_SIZE,
+	LabelError,
+	labelHexFromPng,
+	nearestPaletteIndex,
+} from './label.js';
 export {decideOverlap, type OverlapDecision, spriteHasData} from './overlap.js';
 export {PICO8_PALETTE, type PaletteColor, paletteColor} from './palette.js';
 export {encodePng, type RgbImage} from './png.js';

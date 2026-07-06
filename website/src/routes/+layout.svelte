@@ -7,7 +7,14 @@
 <div class="flex min-h-full flex-col">
 	<header class="border-b border-neutral-800">
 		<nav class="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
-			<a href="{base}/" class="text-lg font-bold tracking-tight">picopilot</a>
+			<a href="{base}/" class="flex items-center gap-2">
+				<img src="{base}/logo.svg" alt="" class="h-8 w-8" />
+				<span class="text-lg font-bold tracking-tight">
+					<span class="text-neutral-50">pico</span><span class="text-pink-400"
+						>pilot</span
+					>
+				</span>
+			</a>
 			<div class="flex gap-4 text-sm text-neutral-300">
 				<a class="hover:text-white" href="{base}/showcase/">Showcase</a>
 				<a

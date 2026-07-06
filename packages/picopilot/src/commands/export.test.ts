@@ -1,9 +1,17 @@
 import {execFileSync} from 'node:child_process';
-import {existsSync, mkdtempSync, writeFileSync} from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Cli} from 'incur';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import {encodePng} from '../engine/gfx/index.js';
+import {PICO8_PALETTE} from '../engine/gfx/index.js';
 import type {
 	ExportOptions,
 	Pico8Adapter,
@@ -15,6 +23,18 @@ import {type Pico8AdapterFactory, registerExport} from './export.js';
 /** A trivial valid cart the command reads (existence + a path to hand the adapter). */
 const CART_TEXT =
 	'pico-8 cartridge // http://www.pico-8.com\nversion 42\n__lua__\nprint("hi")\n';
+
+/** A 128x128 solid PNG (index 12, blue) usable as a --label fixture. */
+function labelPng(): Uint8Array {
+	const c = PICO8_PALETTE[12]!;
+	const rgb = new Uint8Array(128 * 128 * 3);
+	for (let i = 0; i < 128 * 128; i++) {
+		rgb[i * 3] = c.r;
+		rgb[i * 3 + 1] = c.g;
+		rgb[i * 3 + 2] = c.b;
+	}
+	return encodePng({width: 128, height: 128, rgb});
+}
 
 let dir: string;
 let cartPath: string;
@@ -163,6 +183,87 @@ describe('picopilot export: --payload-only (drop the shell page for a site compo
 		// The shell page is gone; the runtime payload remains.
 		expect(existsSync(join(dest, 'index.html'))).toBe(false);
 		expect(existsSync(join(dest, 'index.js'))).toBe(true);
+	});
+});
+
+describe('picopilot export: --label (bake a PNG in as the __label__ splash)', () => {
+	it('injects the label into a copy and exports that (original cart untouched)', async () => {
+		const seen: {options?: ExportOptions} = {};
+		const labelFile = join(dir, 'label.png');
+		writeFileSync(labelFile, labelPng());
+		const {exitCode} = await runExport(
+			() => stubAdapter('writes-bundle', seen),
+			['export', cartPath, join(dir, 'out'), '--label', labelFile, '--json'],
+		);
+		expect(exitCode).toBe(0);
+		// The cart handed to PICO-8 is a labeled COPY, not the original path.
+		const handed = seen.options!.cartPath;
+		expect(handed).not.toBe(cartPath);
+		// The original cart is byte-untouched (no label added to it).
+		expect(readFileSync(cartPath, 'utf8')).toBe(CART_TEXT);
+		expect(readFileSync(cartPath, 'utf8')).not.toContain('__label__');
+	});
+
+	it('cleans up the temporary labeled copy after export', async () => {
+		const seen: {options?: ExportOptions} = {};
+		const labelFile = join(dir, 'label.png');
+		writeFileSync(labelFile, labelPng());
+		await runExport(
+			() => stubAdapter('writes-bundle', seen),
+			['export', cartPath, join(dir, 'out'), '--label', labelFile, '--json'],
+		);
+		// No stray .picopilot-export-*.p8 copy left beside the cart.
+		const leftovers = readdirSync(dir).filter((f) =>
+			f.startsWith('.picopilot-export-'),
+		);
+		expect(leftovers).toEqual([]);
+	});
+
+	it('ignores --label when the cart ALREADY has a label (does not override)', async () => {
+		const seen: {options?: ExportOptions} = {};
+		const labeled = join(dir, 'labeled.p8');
+		writeFileSync(labeled, `${CART_TEXT}__label__\n${'0'.repeat(128)}\n`);
+		const labelFile = join(dir, 'label.png');
+		writeFileSync(labelFile, labelPng());
+		const {exitCode} = await runExport(
+			() => stubAdapter('writes-bundle', seen),
+			['export', labeled, join(dir, 'out'), '--label', labelFile, '--json'],
+		);
+		expect(exitCode).toBe(0);
+		// The cart already had a label, so it is exported AS-IS (no copy made).
+		expect(seen.options!.cartPath).toBe(labeled);
+	});
+
+	it('errors when the --label file does not exist', async () => {
+		const {stdout, exitCode} = await runExport(
+			() => stubAdapter('writes-bundle'),
+			[
+				'export',
+				cartPath,
+				join(dir, 'out'),
+				'--label',
+				join(dir, 'nope.png'),
+				'--json',
+			],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('no label image at');
+	});
+
+	it('errors on a wrong-size label image (must be 128x128)', async () => {
+		const small = encodePng({
+			width: 64,
+			height: 64,
+			rgb: new Uint8Array(64 * 64 * 3),
+		});
+		const labelFile = join(dir, 'small.png');
+		writeFileSync(labelFile, small);
+		const {stdout, exitCode} = await runExport(
+			() => stubAdapter('writes-bundle'),
+			['export', cartPath, join(dir, 'out'), '--label', labelFile, '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('128x128');
 	});
 });
 

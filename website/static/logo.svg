@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="picopilot logo">
+  <title>picopilot</title>
+  <!--
+    A PICO-8-flavoured mark: the fantasy console's screen (rounded dark panel,
+    16-colour palette) with a chunky pixel "pilot cursor" - an upward arrow /
+    play glyph made of PICO-8-sized blocks, nodding to both the console and the
+    agent that flies it. Colours are the real PICO-8 palette.
+  -->
+  <defs>
+    <clipPath id="screen">
+      <rect x="8" y="8" width="112" height="112" rx="18" />
+    </clipPath>
+  </defs>
+
+  <!-- console body -->
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="#1d2b53" />
+  <!-- screen -->
+  <rect x="8" y="8" width="112" height="112" rx="18" fill="#000000" />
+
+  <g clip-path="url(#screen)">
+    <!-- faint scanline glow bands (dark-blue) -->
+    <rect x="8" y="8" width="112" height="112" fill="#1d2b53" opacity="0.25" />
+
+    <!-- pixel grid: 16px cells on the 8..120 screen (7x7 visible cells) -->
+    <!-- the "pilot" mark: a pixel arrow/rocket pointing up-right, in pink->orange->yellow -->
+    <!-- row helpers: cell(c,r) maps to x=8+c*16, y=8+r*16, size 16 -->
+
+    <!-- arrow shaft (blue) -->
+    <rect x="56" y="72" width="16" height="32" fill="#29adff" />
+    <!-- arrow head (pink) -->
+    <rect x="56" y="40" width="16" height="16" fill="#ff77a8" />
+    <rect x="40" y="56" width="16" height="16" fill="#ff77a8" />
+    <rect x="72" y="56" width="16" height="16" fill="#ff77a8" />
+    <rect x="56" y="56" width="16" height="16" fill="#ff004d" />
+
+    <!-- twin thruster pixels (orange + yellow) under the shaft -->
+    <rect x="48" y="88" width="8" height="16" fill="#ffa300" />
+    <rect x="72" y="88" width="8" height="16" fill="#ffa300" />
+    <rect x="56" y="104" width="16" height="8" fill="#ffec27" />
+
+    <!-- palette dots along the bottom edge (a wink at the 16-colour palette) -->
+    <rect x="12" y="112" width="4" height="4" fill="#00e436" />
+    <rect x="18" y="112" width="4" height="4" fill="#ffec27" />
+    <rect x="24" y="112" width="4" height="4" fill="#ff004d" />
+    <rect x="30" y="112" width="4" height="4" fill="#29adff" />
+  </g>
+
+  <!-- screen bezel highlight -->
+  <rect x="8" y="8" width="112" height="112" rx="18" fill="none" stroke="#c2c3c7" stroke-opacity="0.18" stroke-width="2" />
+</svg>

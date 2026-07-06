@@ -26,7 +26,12 @@
 </script>
 
 <section class="prose max-w-none prose-invert">
-	<h1>picopilot</h1>
+	<img src="{base}/logo.svg" alt="picopilot logo" class="mb-4 h-24 w-24" />
+	<h1 class="!mb-2">
+		<span class="text-neutral-50">pico</span><span class="text-pink-400"
+			>pilot</span
+		>
+	</h1>
 	<p class="lead text-lg text-neutral-300">
 		An agent-first toolchain that makes PICO-8 game development easy with an
 		LLM.

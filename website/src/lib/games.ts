@@ -31,14 +31,14 @@ export interface Game {
  * export step, a human curates the list.
  */
 export const games: readonly Game[] = [
-	// Example entry (uncomment and export a cart into static/games/demo/ to enable):
-	// {
-	// 	slug: 'demo',
-	// 	title: 'Demo',
-	// 	blurb: 'A tiny PICO-8 cart exported with picopilot.',
-	// 	author: 'you',
-	// 	shape: 'standalone',
-	// },
+	{
+		slug: 'fliprun',
+		title: 'FLIPRUN',
+		blurb:
+			'A one-button gravity-flip runner. Flip between floor and ceiling to dodge spikes and grab orbs. Built in a 50-minute PICO-8 game-jam session with picopilot.',
+		author: 'picopilot game-jam',
+		shape: 'standalone',
+	},
 ];
 
 /** Look up a single game by slug (for the player route). */
