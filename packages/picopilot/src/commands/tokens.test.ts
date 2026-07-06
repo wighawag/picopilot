@@ -82,7 +82,14 @@ async function runTokens(
 	argv: string[] = ['tokens', cartPath, '--json'],
 	env: Record<string, string | undefined> = {PATH: '/does/not/matter'},
 ) {
-	const cli = Cli.create('picopilot', {version: '0.0.0'});
+	// Use a UNIQUE cli name (not the real 'picopilot'), so incur's skills-freshness
+	// check (`SyncSkills.readHash(name)` + `hasInstalledSkills(name)`) finds NO
+	// stored hash for it and never attaches a "Skills are out of date" CTA. Under
+	// the full parallel run the real `picopilot` skill hash (in $XDG_DATA_HOME) goes
+	// stale (the skills test installs/removes skills concurrently), which would
+	// otherwise inject that ambient CTA and flakily break `expect(cta).toBeUndefined()`.
+	// A unit test of `tokens` must not depend on the machine's installed-skills state.
+	const cli = Cli.create('picopilot-tokens-test', {version: '0.0.0'});
 	registerTokens(cli, factory);
 	let stdout = '';
 	let exitCode = 0;

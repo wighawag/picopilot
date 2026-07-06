@@ -92,7 +92,11 @@ async function runVerify(
 	cart: string = cartPath,
 	env: Record<string, string | undefined> = {PATH: '/does/not/matter'},
 ) {
-	const cli = Cli.create('picopilot', {version: '0.0.0'});
+	// Unique cli name (not 'picopilot') so incur's skills-freshness check finds no
+	// stored hash and never injects an ambient "Skills are out of date" CTA. Under
+	// the full parallel run that CTA would land as cta.commands[0] and flakily break
+	// the verify->run CTA assertion. (Same isolation as tokens.test.ts.)
+	const cli = Cli.create('picopilot-verify-test', {version: '0.0.0'});
 	registerVerify(cli, factory);
 	let stdout = '';
 	let exitCode = 0;
