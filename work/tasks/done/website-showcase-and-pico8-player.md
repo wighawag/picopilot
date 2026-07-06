@@ -5,6 +5,13 @@ blockedBy: []
 covers: []
 ---
 
+## Decisions (as-built)
+
+- **Trimmed the template, did not copy it whole.** The `template-svelte-tailwind` `web/` package carries PWA/service-worker/push-notification/eruda machinery + `pwag` icon generation that a landing + showcase static site does not need. Extracted only the SvelteKit + Tailwind v4 + `adapter-static` skeleton and built the picopilot pages on top, keeping `./website` lean.
+- **`Pico8Player` iframes the STANDALONE export rather than porting PICO-8's shell.** PICO-8's exported `index.html` is a ~700-line self-contained player (input, layout, audio, gamepad, touch). Reimplementing it in Svelte would be brittle, so the standalone shape (the supported path today) reuses PICO-8's own shell verbatim in an iframe; the site provides the surrounding chrome. Payload-only shows a clear notice and is documented as future work (the from-scratch shell port is not built). See ADR-0013 for the shape split.
+- **`handleUnseenRoutes: 'ignore'`** so an EMPTY showcase (the `/showcase/[slug]` dynamic route generating zero pages) is a valid build, not a hard error.
+- **GitHub Pages subpath via `BASE_PATH`** env, wired from `actions/configure-pages` `base_path` at CI build time; defaults to `''` for local/root serving.
+
 ## What to build
 
 A top-level `./website` package (a SvelteKit static site, extracted from `~/dev/github/wighawag/template-svelte-tailwind`'s `web/` package: `@sveltejs/adapter-static`, Tailwind v4, the PWA tooling) that IS the picopilot landing page and the game showcase, deployable as GitHub Pages.
