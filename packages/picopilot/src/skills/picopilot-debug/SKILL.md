@@ -83,45 +83,23 @@ Load-bearing details (each an easy wrong guess, all tested):
 - Screenshots go to a run-controlled dir (`--shot-dir`, default an isolated temp
   dir), never `~/Desktop`.
 
-### Scripted playtests: `run --input`
-
-To automate a gameplay check ("press right x5 then jump, screenshot, did the
-player clear the gap?"), pass a one-shot input string with `--input`; it reaches
-the cart as the `-p` launch parameter, which the cart reads via `stat(6)`. Same
-cooperation model as screenshots: the cart decodes the string and replays it as
-button presses. A minimal harness that replays one char per frame:
-
-```lua
--- stat(6) is the -p launch param string; replay it, one char/frame
-script=stat(6)
-fi=0
-function btn_scripted(b)
- local c=sub(script,flr(fi)+1,flr(fi)+1)
- -- map chars to buttons: l r u d z x  (adapt to your scheme)
- return (b==0 and c=="l") or (b==1 and c=="r") or (b==2 and c=="u")
-     or (b==3 and c=="d") or (b==4 and c=="z") or (b==5 and c=="x")
-end
--- in _update: advance fi, use btn_scripted(n) instead of btn(n); screenshot at
--- marked frames; printh the sentinel when the script is exhausted.
-```
-
-Then: `picopilot run main.p8 --input "rrrrrz"` feeds the script, captures the
-screenshots, and ends on the sentinel. This is the one-shot canned channel (the
-string is fixed at launch); it is enough for deterministic scripted checks.
+To SEE the game actually being PLAYED (drive input + capture gameplay), use
+`picopilot playtest`, next. (`run` boots the cart and captures what it does on
+its own; `playtest` drives it.) There is also a legacy `run --input` that passes
+a one-shot `-p`/`stat(6)` string, but it only works if the cart hand-decodes
+`stat(6)`; for driving an arbitrary game, `playtest` is the tool, not `run
+--input`.
 
 ## Actually PLAY it: `picopilot playtest`
 
-`run --input` only works if YOUR cart decodes `stat(6)`; an arbitrary game reads
-real `btn`/`btnp`. `picopilot playtest` drives ANY normally-written cart with NO
-change to it: on a THROWAWAY copy it redefines `btn`/`btnp` to read a
-harness-piped held-buttons byte (reconstructing `btnp` edges) and OWNS the frame
+`picopilot playtest` drives ANY normally-written cart (one that reads real
+`btn`/`btnp`) with NO change to it: on a THROWAWAY copy it redefines `btn`/`btnp`
+to read a harness-piped held-buttons byte (reconstructing `btnp` edges) and OWNS the frame
 loop, so it advances an exact number of frames, PAUSES (freezing all state,
 including logic in `_draw`) for a clean screenshot, and captures gameplay (not
-the title). Your `main.p8` is never mutated. It handles the standard scaffold
-(`main.p8` = `#include main.lua`) automatically, inlining the include so the
-driven copy is self-contained (no manual pack/build step, just point it at
-`main.p8`). `playtest` requires PICO-8 and returns the same structured
-`pico8-not-found` boundary as `run` when it is absent. (Mechanism: ADR-0011.)
+the title). Your `main.p8` is never mutated. `playtest` requires PICO-8 and
+returns the same structured `pico8-not-found` boundary as `run` when it is
+absent. (Mechanism: ADR-0011.)
 
 There are three ways to drive a cart; pick by how much continuity you need.
 
