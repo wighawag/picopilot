@@ -73,6 +73,21 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 		const md = readSkill('game-jam');
 		// Composition: it points at the reference body by name.
 		expect(md).toContain('game-design-reference');
+		// REGRESSION GUARD (see the FLIPRUN observation + re-grill): a
+		// disable-model-invocation reference skill is NOT auto-loaded by pi, so a
+		// bare-name "read and apply X" pointer gets SKIPPED (the agent never opens
+		// the file). The reliable pattern (Matt's, verified on pi + Claude Code) is
+		// an EXPLICIT relative path resolved against THIS skill's dir + an
+		// imperative to read/load it. Assert the pointer has both, so it never
+		// regresses to the weak wording that made the reference body unreachable.
+		expect(md).toContain('../game-design-reference/SKILL.md');
+		expect(md.toLowerCase()).toMatch(/\b(read|load)\b/);
+		// And game-design-reference stays user-invoked (the reason the explicit
+		// pointer is REQUIRED): if someone flips it to model-invoked, this pairing
+		// assumption changes and the pointer guard should be revisited.
+		expect(readSkill('game-design-reference')).toMatch(
+			/^disable-model-invocation:\s*true$/m,
+		);
 		// The jam-specific clock discipline (the slice/deepen/triage phases).
 		expect(md.toLowerCase()).toContain('playable slice');
 		expect(md.toLowerCase()).toContain('triage');
