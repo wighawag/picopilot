@@ -109,6 +109,94 @@ Then: `picopilot run main.p8 --input "rrrrrz"` feeds the script, captures the
 screenshots, and ends on the sentinel. This is the one-shot canned channel (the
 string is fixed at launch); it is enough for deterministic scripted checks.
 
+## Actually PLAY it: `picopilot playtest`
+
+`run --input` only works if YOUR cart decodes `stat(6)`; an arbitrary game reads
+real `btn`/`btnp`. `picopilot playtest` drives ANY normally-written cart with NO
+change to it: on a THROWAWAY copy it redefines `btn`/`btnp` to read a
+harness-piped held-buttons byte (reconstructing `btnp` edges) and OWNS the frame
+loop, so it advances an exact number of frames, PAUSES (freezing all state,
+including logic in `_draw`) for a clean screenshot, and captures gameplay (not
+the title). Your `main.p8` is never mutated. `playtest` requires PICO-8 and
+returns the same structured `pico8-not-found` boundary as `run` when it is
+absent. (Mechanism: ADR-0011.)
+
+There are three ways to drive a cart; pick by how much continuity you need.
+
+### One-shot: `picopilot playtest run <cart>`
+
+The whole scripted input is known up front, so the cart replays it to completion
+and exits, returning ONE envelope (screenshot paths + captured printh + the
+steps run). Great for a scripted playtest or benchmark judging.
+
+```
+picopilot playtest run main.p8                       # generic driver (press-to-start + gentle presses)
+picopilot playtest run game.p8 --input "3:4, 18-22:4, 20:1"   # frame:bit script (bit 0=L 1=R 2=U 3=D 4=O 5=X)
+picopilot playtest run game.p8 --seed 1 --input "3:4"        # opt-in srand for deterministic replay
+```
+
+`--input` is a comma list of `frame:bit` (a single press, one clean `btnp`
+edge) or `from-to:bit` (a hold). Omit it for the generic one-button/runner/flappy
+driver. `--seed n` injects `srand(n)` at cart start (never silent) so a random
+cart replays identically. Screenshots go to `--shot-dir` (default an isolated
+temp dir, NEVER `~/Desktop`).
+
+### (A) Resumable LIVE session: `start` -> `step`/`input`/`shot` -> `stop`
+
+When you want to PLAY across turns (look at the last frame, decide, inject input,
+step, look again), keep the game ALIVE and PAUSED between your turns. `start`
+launches a persistent driven PICO-8 and returns a SESSION ID; every other verb
+addresses that id in a SEPARATE invocation, and the game stays alive + paused in
+between. Stepping is deterministic via a stdout ACK handshake (the host waits for
+the cart's ack before returning), so you always act on a settled, known frame, no
+wall-clock guessing.
+
+```
+ID=$(picopilot playtest start main.p8 --format json | jq -r .id)   # launch, get the id
+picopilot playtest input  $ID "right o"    # hold buttons for the next steps (names: left/right/up/down/o/x)
+picopilot playtest step   $ID --frames 30  # advance EXACTLY 30 frames, then pause
+picopilot playtest shot   $ID              # screenshot the current frozen frame -> a PNG path
+picopilot playtest status $ID              # is it alive? how many frames in?
+picopilot playtest stop   $ID              # tear it down (quit PICO-8, reap the dir)
+```
+
+Lifecycle notes (each verified/handled, not a hope):
+
+- Each verb WRITES a fixed-size command block and WAITS for the cart's ACK, so a
+  `step N` advances exactly N frames and a `shot` between steps captures the
+  frozen intended frame. Between verbs the game is frozen (stable framebuffer).
+- ONE session per id; MULTIPLE concurrent sessions are allowed (distinct ids get
+  distinct daemons/dirs). Omit `--id` for a fresh random id; pass `--id name` for
+  a stable one.
+- ORPHAN reaping: a session you never `stop` self-reaps after an idle window
+  (`--idle-timeout-ms`, default 10 min), so a walked-away session cannot leak a
+  live PICO-8 forever. `stop` is idempotent (safe on an already-dead session).
+- PICO-8 dying mid-session surfaces as a STRUCTURED error on the next verb
+  (`playtest-session-process-dead`), never a hang; a command with no ACK by the
+  deadline is `playtest-session-ack-timeout`. `start` with PICO-8 absent is
+  `pico8-not-found`, same as `run`.
+- Screenshots + the throwaway driven cart live under a controlled temp session
+  dir, never `~/Desktop` or your carts root.
+
+### (C) Stateless REPLAY (the free fallback, no daemon)
+
+You do NOT always need a live session. Because the one-shot is deterministic
+under `--seed`, you can "resume" by RE-INVOKING `playtest run` with an
+ACCUMULATING script each turn: re-run from frame 0 with the same seed plus the
+new presses appended. It is cheap, reproducible, and daemon-free.
+
+```
+picopilot playtest run game.p8 --seed 1 --input "3:4"                 # turn 1
+picopilot playtest run game.p8 --seed 1 --input "3:4, 40:1"          # turn 2 (replays turn 1, then the new press)
+picopilot playtest run game.p8 --seed 1 --input "3:4, 40:1, 55:5"    # turn 3 ...
+```
+
+Prefer (C) for short, replay-safe games (it needs no live process). Use the live
+session (A) for true continuity: long games, or games that reseed from a
+NON-deterministic source (wall-clock/entropy) mid-run and so cannot be replayed
+from frame 0. Both drive the SAME cart-side transform; only the host lifecycle
+differs.
+
 ## The two structured boundaries
 
 Both dependency boundaries are soft and well-signposted, so read the result, do
@@ -117,7 +205,7 @@ not guess:
 - `shrinko-not-found` (remedy `uv pip install shrinko`): gates the token/lint
   commands and therefore `verify`.
 - `pico8-not-found` (remedy `set PICO8_PATH or install PICO-8`): gates `run`,
-  `audio render`, and binary/PNG exports.
+  `playtest`, `audio render`, and binary/PNG exports.
 
 Each is a structured `{ ok: false, reason, remedy }` envelope with a nonzero
 exit, telling you exactly which capability is gated and how to enable it.

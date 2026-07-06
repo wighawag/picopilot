@@ -1,0 +1,3 @@
+# `tokens` test flakes only under the full parallel vitest run
+
+2026-07-06: `src/commands/tokens.test.ts > reports {tokens, pct, chars, compressed} under budget with no minify CTA` fails intermittently (roughly 1 in 3) during a FULL `pnpm test` run, but passes 100% in isolation (`vitest run src/commands/tokens.test.ts`, repeated). It shells out to shrinko, so the likely cause is resource contention (shrinko subprocess startup) when many suites run concurrently, not a logic bug. Noticed while landing `playtest-resumable-session` (my new tests are unrelated: they use no shrinko). Out of scope for that task; flagging so someone can quarantine/serialize the shrinko tests or add a retry.

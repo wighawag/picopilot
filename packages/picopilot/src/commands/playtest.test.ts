@@ -84,7 +84,7 @@ function drove(exitReason: 'sentinel' | 'timeout' | 'exit'): Pico8DriveResult {
 
 async function runPlaytest(
 	factory: Pico8AdapterFactory,
-	argv: string[] = ['playtest', cartPath, '--json'],
+	argv: string[] = ['playtest', 'run', cartPath, '--json'],
 	env: Record<string, string | undefined> = {PATH: '/does/not/matter'},
 ) {
 	const cli = Cli.create('picopilot', {version: '0.0.0'});
@@ -143,7 +143,16 @@ describe('picopilot playtest: --input + --seed threading', () => {
 		const seen: {options?: DriveOptions} = {};
 		await runPlaytest(
 			() => stubAdapter(drove('sentinel'), seen),
-			['playtest', cartPath, '--input', '3:1', '--frames', '5', '--json'],
+			[
+				'playtest',
+				'run',
+				cartPath,
+				'--input',
+				'3:1',
+				'--frames',
+				'5',
+				'--json',
+			],
 		);
 		// The blocks piped to the cart decode to a script that presses Right (bit 1).
 		const cmds = new BlockDecoder().push(seen.options!.blocks);
@@ -156,7 +165,7 @@ describe('picopilot playtest: --input + --seed threading', () => {
 		const {stdout, exitCode} = await runPlaytest(() => {
 			launched = true;
 			return stubAdapter(drove('sentinel'));
-		}, ['playtest', cartPath, '--input', '3:9', '--json']);
+		}, ['playtest', 'run', cartPath, '--input', '3:9', '--json']);
 		expect(exitCode).not.toBe(0);
 		expect(stdout).toContain('playtest-input-invalid');
 		expect(launched).toBe(false); // fails before the adapter is built
@@ -166,7 +175,7 @@ describe('picopilot playtest: --input + --seed threading', () => {
 		const seen: {options?: DriveOptions} = {};
 		const {stdout} = await runPlaytest(
 			() => stubAdapter(drove('sentinel'), seen),
-			['playtest', cartPath, '--seed', '7', '--json'],
+			['playtest', 'run', cartPath, '--seed', '7', '--json'],
 		);
 		expect(JSON.parse(stdout).seeded).toBe(true);
 		// The driven cart written for PICO-8 carries srand(7).
@@ -178,7 +187,7 @@ describe('picopilot playtest: --input + --seed threading', () => {
 		const seen: {options?: DriveOptions} = {};
 		const {stdout} = await runPlaytest(
 			() => stubAdapter(drove('sentinel'), seen),
-			['playtest', cartPath, '--json'],
+			['playtest', 'run', cartPath, '--json'],
 		);
 		expect(JSON.parse(stdout).seeded).toBe(false);
 		expect(readFileSync(seen.options!.cartPath, 'utf8')).not.toContain(
@@ -211,7 +220,7 @@ describe('picopilot playtest: shared-write discipline (never ~/Desktop, entry un
 	it('leaves the entry cart bytes BYTE-untouched across a playtest', async () => {
 		await runPlaytest(
 			() => stubAdapter(drove('sentinel')),
-			['playtest', cartPath, '--seed', '1', '--json'],
+			['playtest', 'run', cartPath, '--seed', '1', '--json'],
 		);
 		expect(readFileSync(cartPath, 'utf8')).toBe(CART_TEXT);
 	});
@@ -230,7 +239,7 @@ describe('picopilot playtest: cart-not-found (picopilot-side, distinct from pico
 	it('errors with a nonzero exit when the cart path does not exist', async () => {
 		const {stdout, exitCode} = await runPlaytest(
 			() => stubAdapter(drove('sentinel')),
-			['playtest', join(dir, 'nope.p8'), '--json'],
+			['playtest', 'run', join(dir, 'nope.p8'), '--json'],
 		);
 		expect(exitCode).not.toBe(0);
 		expect(stdout).toContain('no cart at');
@@ -241,7 +250,68 @@ describe('picopilot playtest: cart-not-found (picopilot-side, distinct from pico
 		await runPlaytest(() => {
 			called = true;
 			return stubAdapter(drove('sentinel'));
-		}, ['playtest', join(dir, 'missing.p8'), '--json']);
+		}, ['playtest', 'run', join(dir, 'missing.p8'), '--json']);
 		expect(called).toBe(false);
+	});
+});
+
+/**
+ * The RESUMABLE session verbs' CI-safe surface (no daemon, no binary): a verb
+ * against an id with no live daemon is a structured `playtest-session-not-found`;
+ * a malformed id / buttons is a structured refusal before any socket work. The
+ * live daemon round-trip is covered in `session-daemon.test.ts` (fake process)
+ * and the manual/opt-in tier (real PICO-8).
+ */
+describe('picopilot playtest session verbs: structured boundaries (no daemon)', () => {
+	it('step/input/shot/status on an unknown id -> playtest-session-not-found', async () => {
+		for (const argv of [
+			['playtest', 'step', 'ghost', '--json'],
+			['playtest', 'input', 'ghost', 'right', '--json'],
+			['playtest', 'shot', 'ghost', '--json'],
+			['playtest', 'status', 'ghost', '--json'],
+		]) {
+			const {stdout, exitCode} = await runPlaytest(
+				() => stubAdapter(drove('sentinel')),
+				argv,
+			);
+			expect(exitCode).not.toBe(0);
+			expect(stdout).toContain('playtest-session-not-found');
+		}
+	});
+
+	it('stop on an unknown id is an idempotent no-op success (alive:false)', async () => {
+		const {stdout, exitCode} = await runPlaytest(
+			() => stubAdapter(drove('sentinel')),
+			['playtest', 'stop', 'ghost', '--json'],
+		);
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout).alive).toBe(false);
+	});
+
+	it('a malformed session id is a structured refusal', async () => {
+		const {stdout, exitCode} = await runPlaytest(
+			() => stubAdapter(drove('sentinel')),
+			['playtest', 'step', '../escape', '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('playtest-session-id-invalid');
+	});
+
+	it('an unknown button on `input` is a structured refusal (before any socket)', async () => {
+		const {stdout, exitCode} = await runPlaytest(
+			() => stubAdapter(drove('sentinel')),
+			['playtest', 'input', 'ghost', 'jump', '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('playtest-input-invalid');
+	});
+
+	it('start with an invalid id refuses before spawning anything', async () => {
+		const {stdout, exitCode} = await runPlaytest(
+			() => stubAdapter(drove('sentinel')),
+			['playtest', 'start', cartPath, '--id', 'bad id', '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('playtest-session-id-invalid');
 	});
 });

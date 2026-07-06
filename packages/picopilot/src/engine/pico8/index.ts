@@ -13,4 +13,8 @@ export * from './adapter.js';
 export * from './drive.js';
 export * from './harness.js';
 export * from './sentinel.js';
+export * from './session.js';
+export * from './session-daemon.js';
+export * from './session-daemon-main.js';
 export * from './shell.js';
+export * from './supervisor.js';

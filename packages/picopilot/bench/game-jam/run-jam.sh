@@ -189,8 +189,8 @@ LUA
   # title->play, so the judge sees real gameplay (not the title screen). The
   # drive logic now lives in ONE tested place (engine/pico8 drive-transform,
   # ADR-0011); the bespoke drive-capture.sh is superseded.
-  echo ">>> live-gameplay capture (picopilot playtest, ADR-0011)..."
-  ( cd "$WORKDIR" && node "$PICOPILOT_BIN" playtest main.p8 --shot-dir "$ART/shots-play" --format json ) > "$ART/drive.json" 2>&1 || true
+  echo ">>> live-gameplay capture (picopilot playtest run, ADR-0011)..."
+  ( cd "$WORKDIR" && node "$PICOPILOT_BIN" playtest run main.p8 --shot-dir "$ART/shots-play" --format json ) > "$ART/drive.json" 2>&1 || true
   grep -oE '"exitReason"[: ]+"[a-z]*"' "$ART/drive.json" 2>/dev/null | head -1 || true
 
   echo ">>> playability lint (invisible-player / empty-sprite check)..."
