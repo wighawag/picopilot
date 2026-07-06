@@ -18,6 +18,36 @@ Two possible mechanisms, and they matter for the architecture:
 
 Why it matters: the whole point of `game-design-reference` as a SINGLE SOURCE OF TRUTH reached by pointer is that the reference's SPECIFIC content (not just its headline concepts) reaches the agent. If (2), then a leaner prompt that did NOT name the four concepts might see the agent NOT reach the lens at all, i.e. the skill's reach-by-pointer would be doing less work than it appears, and the prompt's concept-naming would be load-bearing. The current run cannot distinguish (1) from (2) because the prompt names the concepts AND the skill is loaded.
 
+## MECHANISM CONFIRMED (probes, 2026-07-06)
+
+Ran two direct `pi --skill` probes with a fresh agent, no session:
+
+- A `disable-model-invocation` skill's body is **NOT auto-injected** into context, not even its description. Probe: "from context only, what is game-design-reference's fairness self-check?" -> **"NOT IN CONTEXT"**. So the agent must be given the name AND actively open the file to get ANY of its content.
+- A model-invoked skill (`game-jam`) has **only its DESCRIPTION** in context by default ("DESC ONLY"); its BODY is reached by the agent reading SKILL.md after it decides to fire.
+
+Combined with a FULL FLIPRUN session audit (every tool call, not just a narrow grep): the agent used only bash/edit/read/write (no skill-load tool exists), read `game-jam/SKILL.md` / `picopilot-code/SKILL.md` / `picopilot-overview/SKILL.md`, and NEVER read `game-design-reference/SKILL.md`. `game-design-reference` appears exactly ONCE in the whole 584-message session, in an early toolResult (the skill-system listing that surfaces the skill's NAME), never in an agent read of its body. This CONFIRMS possibility (2): `game-design-reference`'s specific content did NOT reach the agent. The run's fairness/reaction depth came from (a) the PROMPT naming the four concepts, (b) `game-jam`'s OWN inline "situated design calls" section (which itself mentions dead-state + frame-perfect), and (c) the agent's priors, NOT from the reference body.
+
+**This is a real architecture gap: the single-source-of-truth reference body is not reliably reaching the agent.** The reach-by-pointer chain (`game-jam` body says "read and apply game-design-reference throughout") was followed in SPIRIT (concepts applied) but not in FACT (file never opened). The reference's SPECIFIC procedures (enumerable hazard-avoidability, interrogative originality moves, 6-9-frames-at-30fps math) were never in context.
+
+Implication for the design: EITHER
+- (i) strengthen `game-jam`'s pointer so it EXPLICITLY instructs the agent to OPEN/READ `game-design-reference` (an imperative "read the file at <path>", not just "apply it"), OR
+- (ii) accept that the load-bearing situated content must live IN `game-jam` (inline), and treat `game-design-reference` as a deeper optional reference, which weakens the single-source-of-truth rationale for the split, OR
+- (iii) make `game-design-reference` model-invoked after all (so at least its description is in context and the agent can fire it), trading the per-turn context cost we deliberately avoided.
+
+The original grill (Q2/Q3) assumed "reach by pointer" would deliver the body the way `ask-matt` -> `/writing-great-skills` does; these probes show a bare in-body mention is NOT sufficient to make the agent open a user-invoked skill. Needs a design decision (re-grill this rung).
+
+## FULL MECHANISM, verified against pi source + isolated probes (2026-07-06)
+
+Read pi source (`~/dev/github/wighawag/pi`, `packages/coding-agent/src/core/package-manager.ts` ~L2276-2320, `resource-loader.ts`). pi discovers skills from: `~/.pi/agent/skills` (global agent dir), `<cwd>/.pi/skills` (project-local, `CONFIG_DIR_NAME=.pi`), and `~/.agents/skills` + ancestor `.agents/skills` (all THREE of the latter gated on `projectTrusted`, which `--approve`/`-a` sets; defaults true). Our earlier `--skill <dir>` loads skills as EPHEMERAL top-level, and a bare cwd `.agents/skills` is NOT discovered unless trusted.
+
+Probed all this ISOLATED (temp dirs, never touching real `~/.agents/skills` or `~/.pi/agent/skills`), installing into `<tmp>/.pi/skills` + `--approve`:
+
+- A `disable-model-invocation` skill (`game-design-reference`) is, even when properly registered + trusted: NOT in context (body absent), and NOT EVEN LISTED as an available skill to the model. It is only ever *mentioned by name* via `game-jam`'s description. Registration does NOT change this vs `--skill`, the flag is `disable-model-invocation`, not the discovery path.
+- A model-invoked skill (`game-jam`): only its DESCRIPTION is in context; body reached by the agent reading SKILL.md.
+- **There is NO "load skill by name" tool in pi.** When explicitly told to use `game-design-reference`, the agent reached it by `find`/`grep`-ing the filesystem for the name, then `read`-ing `.pi/skills/game-design-reference/SKILL.md` directly. It CAN get the exact content this way, but only via filesystem archaeology, not a first-class skill-load.
+
+**Bottom line: the reach-by-pointer chain requires the agent to (a) care enough to go looking and (b) filesystem-hunt for a file it knows only by name.** In FLIPRUN it did neither (game-jam's inline content + the prompt's concept words sufficed), so `game-design-reference`'s specific body never reached it. This is a fragile seam regardless of registration path. The re-grill must pick among: strengthen game-jam's pointer to an IMPERATIVE "read the file at <resolvable path>"; move the load-bearing situated content INLINE into game-jam (demoting game-design-reference to optional deep reference); or make game-design-reference MODEL-INVOKED (accept per-turn description cost so it is at least listed + auto-fireable).
+
 ## Follow-up (cheap experiments to disambiguate)
 
 - Check whether `pi --skill` AUTO-INJECTS a user-invoked (`disable-model-invocation`) skill's body into context, or only makes it reachable-on-demand. (Determines whether reach-by-pointer is implicit-load or explicit-open.)
