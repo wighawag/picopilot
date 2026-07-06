@@ -1,32 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 128" width="440" height="128" role="img" aria-label="picopilot">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 128" width="460" height="128" role="img" aria-label="picopilot">
   <title>picopilot</title>
-  <!-- The icon mark (see logo.svg) followed by the picopilot wordmark. -->
+  <!-- The flower icon (see logo.svg) + the picopilot wordmark. All PICO-8 palette. -->
   <defs>
-    <clipPath id="wm-screen">
-      <rect x="8" y="8" width="112" height="112" rx="18" />
-    </clipPath>
+    <clipPath id="wm-screen"><rect x="8" y="8" width="112" height="112" rx="18" /></clipPath>
   </defs>
 
-  <!-- icon -->
   <g>
     <rect x="4" y="4" width="120" height="120" rx="24" fill="#1d2b53" />
     <rect x="8" y="8" width="112" height="112" rx="18" fill="#000000" />
     <g clip-path="url(#wm-screen)">
       <rect x="8" y="8" width="112" height="112" fill="#1d2b53" opacity="0.25" />
-      <rect x="56" y="72" width="16" height="32" fill="#29adff" />
-      <rect x="56" y="40" width="16" height="16" fill="#ff77a8" />
+      <rect x="56" y="24" width="16" height="16" fill="#ff77a8" />
+      <rect x="32" y="32" width="16" height="16" fill="#ff77a8" />
+      <rect x="80" y="32" width="16" height="16" fill="#ff77a8" />
+      <rect x="32" y="64" width="16" height="16" fill="#ff77a8" />
+      <rect x="80" y="64" width="16" height="16" fill="#ff77a8" />
+      <rect x="56" y="72" width="16" height="16" fill="#ff77a8" />
+      <rect x="48" y="40" width="32" height="32" fill="#ff77a8" />
+      <rect x="40" y="40" width="16" height="16" fill="#ff77a8" />
+      <rect x="72" y="40" width="16" height="16" fill="#ff77a8" />
       <rect x="40" y="56" width="16" height="16" fill="#ff77a8" />
       <rect x="72" y="56" width="16" height="16" fill="#ff77a8" />
-      <rect x="56" y="56" width="16" height="16" fill="#ff004d" />
-      <rect x="48" y="88" width="8" height="16" fill="#ffa300" />
-      <rect x="72" y="88" width="8" height="16" fill="#ffa300" />
-      <rect x="56" y="104" width="16" height="8" fill="#ffec27" />
+      <rect x="52" y="44" width="24" height="24" fill="#ffccaa" />
+      <rect x="54" y="46" width="20" height="20" fill="#ff004d" />
+      <rect x="58" y="50" width="12" height="12" fill="#ffec27" />
+      <rect x="56" y="88" width="16" height="24" fill="#00e436" />
+      <rect x="40" y="94" width="16" height="10" fill="#008751" />
+      <rect x="72" y="102" width="16" height="10" fill="#008751" />
     </g>
     <rect x="8" y="8" width="112" height="112" rx="18" fill="none" stroke="#c2c3c7" stroke-opacity="0.18" stroke-width="2" />
   </g>
 
-  <!-- wordmark: "pico" white, "pilot" pink, in a chunky mono face -->
-  <text x="140" y="82"
+  <!-- wordmark: pico (white 7) / pilot (pink 14) -->
+  <text x="140" y="83"
         font-family="'JetBrains Mono','SFMono-Regular',ui-monospace,Menlo,Consolas,monospace"
         font-size="52" font-weight="700" letter-spacing="-1">
     <tspan fill="#fff1e8">pico</tspan><tspan fill="#ff77a8">pilot</tspan>
