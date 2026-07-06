@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# SUPERSEDED (2026-07-06): the drive+capture logic this prototype pioneered now
+# lives in the tested `picopilot playtest` command (engine/pico8 drive-transform,
+# ADR-0011). run-jam.sh calls `picopilot playtest` instead of this script; this
+# file is kept only as the spike artifact the finding
+# (work/notes/findings/pico8-drive-capture-transform-and-block-transport.md)
+# cites. Do NOT wire new callers to it; use `picopilot playtest`.
+#
 # Drive-capture: screenshot an entry during LIVE gameplay by transforming its
 # input calls to a harness-driven channel, so the judge sees real play (not the
 # title screen). Spike-verified (btn/btnp shadowing + serial 0x804 frame-synced +

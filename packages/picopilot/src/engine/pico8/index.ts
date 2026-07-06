@@ -10,6 +10,7 @@
  *               injectable spawn seam for isolation-testing.
  */
 export * from './adapter.js';
+export * from './drive.js';
 export * from './harness.js';
 export * from './sentinel.js';
 export * from './shell.js';

@@ -2,9 +2,11 @@ import {spawn} from 'node:child_process';
 import {existsSync, readdirSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {
+	type DriveOptions,
 	type ExitReason,
 	type Pico8Adapter,
 	pico8NotFound,
+	type Pico8DriveResult,
 	type Pico8RecordResult,
 	type Pico8Result,
 	RECORD_WAV_BASENAME,
@@ -25,6 +27,12 @@ export interface Pico8Process {
 	onClose(cb: (code: number | null) => void): void;
 	onError(cb: (err: NodeJS.ErrnoException) => void): void;
 	kill(): void;
+	/**
+	 * Writes raw bytes to the process's stdin, for the `drive` transport (the
+	 * fixed-size command blocks). Absent/undefined when stdin was detached
+	 * (`run`/`record` ignore stdin so the cart never blocks on console input).
+	 */
+	writeStdin?(bytes: Uint8Array): void;
 }
 
 /**
@@ -38,6 +46,7 @@ export type SpawnRunner = (
 	file: string,
 	args: string[],
 	env: NodeJS.ProcessEnv,
+	options?: {stdin?: boolean},
 ) => Pico8Process;
 
 /**
@@ -46,10 +55,13 @@ export type SpawnRunner = (
  * watch. A spawn failure surfaces via `onError` (ENOENT ⇒ absent). `kill` sends
  * SIGKILL to the whole tree (`detached` + negative pid) so a hung PICO-8 dies.
  */
-export const spawnRunner: SpawnRunner = (file, args, env) => {
+export const spawnRunner: SpawnRunner = (file, args, env, options) => {
+	// `drive` pipes fixed-size command blocks to stdin; `run`/`record` detach it so
+	// the cart never blocks on console input.
+	const stdin = options?.stdin === true ? 'pipe' : 'ignore';
 	const child = spawn(file, args, {
 		env,
-		stdio: ['ignore', 'pipe', 'pipe'],
+		stdio: [stdin, 'pipe', 'pipe'],
 		detached: true,
 	});
 	child.stdout?.setEncoding('utf8');
@@ -64,6 +76,13 @@ export const spawnRunner: SpawnRunner = (file, args, env) => {
 		},
 		onError(cb) {
 			child.on('error', cb as (e: Error) => void);
+		},
+		writeStdin(bytes) {
+			try {
+				child.stdin?.write(Buffer.from(bytes));
+			} catch {
+				// A closed stdin (the cart exited) is not fatal to the run.
+			}
 		},
 		kill() {
 			try {
@@ -176,6 +195,34 @@ export class ShellPico8Adapter implements Pico8Adapter {
 	 * isolated `wavDir`. Live capture is a manual/opt-in tier; the absent path is
 	 * the CI-testable one.
 	 */
+	/**
+	 * Drives a throwaway cart through scripted input and captures live gameplay
+	 * (ADR-0011). Launches `-desktop <shotDir> -x <cart>` with a LIVE stdin, writes
+	 * the whole encoded FIXED-SIZE command block stream up front (the one-shot; the
+	 * cart drains one block per frame and screenshots at the SHOT points), watches
+	 * the sentinel, arms the backstop, and collects the SHOT PNGs + printh + exit
+	 * reason. Returns {@link pico8NotFound} when PICO-8 is absent. Live capture is a
+	 * manual/opt-in tier; the absent path is the CI-testable one.
+	 */
+	drive(options: DriveOptions): Promise<Pico8DriveResult> {
+		const [file] = pico8Candidates(this.env) as [string, ...string[]];
+		const args = ['-desktop', options.shotDir, '-x', options.cartPath];
+		return this.orchestrate<Pico8DriveResult>(
+			file,
+			args,
+			{sentinel: options.sentinel, backstopMs: options.backstopMs},
+			(exitReason, printh) => ({
+				ok: true,
+				value: {
+					screenshots: collectScreenshots(options.shotDir),
+					printh,
+					exitReason,
+				},
+			}),
+			{stdin: true, onSpawn: (proc) => proc.writeStdin?.(options.blocks)},
+		);
+	}
+
 	record(options: RecordOptions): Promise<Pico8RecordResult> {
 		const [file] = pico8Candidates(this.env) as [string, ...string[]];
 		const basename = options.wavBasename ?? RECORD_WAV_BASENAME;
@@ -211,13 +258,16 @@ export class ShellPico8Adapter implements Pico8Adapter {
 		args: string[],
 		opts: {sentinel?: string; backstopMs: number},
 		buildOk: (exitReason: ExitReason, printh: string) => R,
+		spawnOpts?: {stdin?: boolean; onSpawn?: (proc: Pico8Process) => void},
 	): Promise<R | ReturnType<typeof pico8NotFound>> {
 		const watcher = new SentinelWatcher(opts.sentinel);
 
 		return new Promise<R | ReturnType<typeof pico8NotFound>>((resolve) => {
 			let settled = false;
 			let backstop: NodeJS.Timeout | undefined;
-			const proc = this.spawnRun(file, args, this.env);
+			const proc = this.spawnRun(file, args, this.env, {
+				stdin: spawnOpts?.stdin,
+			});
 
 			const finish = (exitReason: ExitReason): void => {
 				if (settled) return;
@@ -248,6 +298,10 @@ export class ShellPico8Adapter implements Pico8Adapter {
 			});
 
 			proc.onClose(() => finish('exit')); // PICO-8 exited on its own
+
+			// For `drive`: write the command blocks to the live stdin now that it is
+			// spawned. A spawn ENOENT resolves via onError before this matters.
+			spawnOpts?.onSpawn?.(proc);
 
 			// Backstop: a cart that neither signals nor exits gets killed.
 			backstop = setTimeout(() => {

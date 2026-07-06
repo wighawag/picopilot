@@ -56,11 +56,18 @@ mkdir -p "$WORKDIR/bench-artifacts"
 WORKDIR="$(cd "$WORKDIR" && pwd)"
 ART="$WORKDIR/bench-artifacts"
 
-# Resolve the PICO-8 binary for the drive-capture (which shells out to pico8
-# directly). picopilot itself uses PICO8_PATH; mirror that resolution here.
-PICO8="${PICO8_PATH:-}"
-[ -z "$PICO8" ] && PICO8="$HOME/.AppImages/pico-8/pico8"
-[ -x "$PICO8" ] || PICO8="$(command -v pico8 2>/dev/null || echo pico8)"
+# Resolve the PICO-8 binary so `picopilot playtest`/`run` can find it. picopilot
+# reads PICO8_PATH (else `pico8` on PATH), so export a resolved path for the
+# capture subprocesses; a missing binary surfaces as the structured
+# pico8-not-found, not a crash.
+if [ -z "${PICO8_PATH:-}" ]; then
+  if [ -x "$HOME/.AppImages/pico-8/pico8" ]; then
+    PICO8_PATH="$HOME/.AppImages/pico-8/pico8"
+  else
+    PICO8_PATH="$(command -v pico8 2>/dev/null || echo pico8)"
+  fi
+  export PICO8_PATH
+fi
 
 SID="jam-${SLUG}-$(date +%s)"
 MODEL_ARGS=()
@@ -177,12 +184,14 @@ LUA
   echo ">>> boot + screenshot check (fresh, auto-instrumented)..."
   instrument_and_run "" "$ART/shots-fresh" > "$ART/boot.json" 2>&1 || true
   rm -rf "$ART/_probe"
-  # LIVE-gameplay capture: transform the cart's btn/btnp to a harness-driven
-  # serial channel and drive it into active play, so the judge sees real
-  # gameplay (not the title screen). Spike-verified; see drive-capture.sh.
-  echo ">>> live-gameplay capture (drive-transform via serial 0x804)..."
-  bash "$HERE/drive-capture.sh" "$PICO8" "$WORKDIR" "$ART/shots-play" > "$ART/drive.txt" 2>&1 || true
-  cat "$ART/drive.txt" 2>/dev/null | tail -1
+  # LIVE-gameplay capture: `picopilot playtest` transforms a throwaway copy of
+  # the entry (btn/btnp -> serial 0x804, harness-owned frame loop) and drives it
+  # title->play, so the judge sees real gameplay (not the title screen). The
+  # drive logic now lives in ONE tested place (engine/pico8 drive-transform,
+  # ADR-0011); the bespoke drive-capture.sh is superseded.
+  echo ">>> live-gameplay capture (picopilot playtest, ADR-0011)..."
+  ( cd "$WORKDIR" && node "$PICOPILOT_BIN" playtest main.p8 --shot-dir "$ART/shots-play" --format json ) > "$ART/drive.json" 2>&1 || true
+  grep -oE '"exitReason"[: ]+"[a-z]*"' "$ART/drive.json" 2>/dev/null | head -1 || true
 
   echo ">>> playability lint (invisible-player / empty-sprite check)..."
   bash "$HERE/check-playable.sh" "$PICOPILOT_BIN" "$WORKDIR" > "$ART/playable.txt" 2>&1 || true
