@@ -164,6 +164,62 @@ export interface RecordOptions {
 	readonly backstopMs: number;
 }
 
+/**
+ * A completed EXPORT run's results (the PICO-8 HTML export, `pico8 <cart>
+ * -export <name>.html -x`). PICO-8 writes a pair into the output dir: the shell
+ * page (`<name>.html`, which references its sibling by name) and the
+ * Emscripten runtime + baked-in cart payload (`<name>.js`). `htmlPath` is the
+ * shell page (undefined for a payload-only export that keeps only the runtime);
+ * `jsPath` is the runtime payload; `files` lists every produced file (absolute).
+ * `labelWarning` surfaces PICO-8's "please capture a label first" notice: a
+ * labelless cart exports with an ugly/blank splash (a soft warning, not a
+ * failure).
+ */
+export interface ExportReport {
+	readonly htmlPath: string | undefined;
+	readonly jsPath: string | undefined;
+	readonly files: readonly string[];
+	readonly labelWarning: boolean;
+}
+
+/** A successful export call carrying the {@link ExportReport}. */
+export interface Pico8ExportOk {
+	readonly ok: true;
+	readonly value: ExportReport;
+}
+
+/**
+ * The result {@link Pico8Adapter.export} returns: an {@link ExportReport} or the
+ * structured {@link Pico8NotFound} (PICO-8 absent), mirroring {@link Pico8Result}.
+ */
+export type Pico8ExportResult = Pico8ExportOk | Pico8NotFound;
+
+/**
+ * Options for a single {@link Pico8Adapter.export}. PICO-8 derives the produced
+ * file names from `htmlName` (`game.html` -> `game.html` + `game.js`), so the
+ * command passes `index.html` to get a directly-serveable `index.html` +
+ * `index.js` pair in `outDir`. `payloadOnly` keeps only the `.js` runtime
+ * payload (dropping the shell page) for a website that provides its OWN player
+ * shell (a Svelte component), never the PICO-8 binary's concern: the split is a
+ * post-export file operation the command owns.
+ */
+export interface ExportOptions {
+	/** Absolute path to the `.p8` cart to export. */
+	readonly cartPath: string;
+	/** The run-controlled dir PICO-8 writes the export pair into. */
+	readonly outDir: string;
+	/**
+	 * The `.html` name handed to `-export` (e.g. `index.html`); PICO-8 derives the
+	 * sibling `.js` from it. Defaults to {@link EXPORT_HTML_NAME}.
+	 */
+	readonly htmlName?: string;
+	/** The hard backstop in ms: kill PICO-8 if the export neither completes nor exits. */
+	readonly backstopMs: number;
+}
+
+/** The default `.html` name `export` hands to `-export`: yields a serveable `index.html` + `index.js`. */
+export const EXPORT_HTML_NAME = 'index.html' as const;
+
 /** Options for a single {@link Pico8Adapter.run}. */
 export interface RunOptions {
 	/** Absolute path to the `.p8` cart to run. */
@@ -214,6 +270,17 @@ export interface Pico8Adapter {
 	 * manual/opt-in tier; CI drives a fake runner + the absent boundary.
 	 */
 	drive(options: DriveOptions): Promise<Pico8DriveResult>;
+
+	/**
+	 * Exports `cartPath` as a PICO-8 HTML bundle (`pico8 <cart> -export
+	 * <outDir>/<htmlName> -x`, the HEADLESS `-x` path, no display needed) and
+	 * collects the produced `.html` + `.js` pair from `outDir`. Returns
+	 * {@link Pico8NotFound} when PICO-8 is absent (the CI-testable boundary). Live
+	 * export is a manual/opt-in tier: it hard-requires the paid binary, and a
+	 * labelless cart exports with a `labelWarning` set (a soft warning, not a
+	 * failure). The command owns any post-export payload-only file split.
+	 */
+	export(options: ExportOptions): Promise<Pico8ExportResult>;
 }
 
 /** The default WAV basename a recorded cart passes to `extcmd("set_filename")`. */

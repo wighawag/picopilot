@@ -447,3 +447,106 @@ describe('ShellPico8Adapter.drive: headless capture + block transport', () => {
 		expect(proc.killed).toBe(true);
 	});
 });
+
+describe('ShellPico8Adapter.export: PICO-8 absent (the CI-testable boundary)', () => {
+	it('returns structured pico8-not-found when the binary ENOENTs', async () => {
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.export({
+			cartPath: '/x/main.p8',
+			outDir: '/x/out',
+			backstopMs: 1000,
+		});
+		proc.fail('ENOENT');
+		const result = await resultP;
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('pico8-not-found');
+			expect(result.remedy).toBe('set PICO8_PATH or install PICO-8');
+			expect(result.needs).toContain('pico8');
+		}
+	});
+});
+
+describe('ShellPico8Adapter.export: the headless -export -x invocation', () => {
+	let outDir: string;
+	beforeEach(() => {
+		outDir = mkdtempSync(join(tmpdir(), 'pico8-export-'));
+	});
+	afterEach(() => rmSync(outDir, {recursive: true, force: true}));
+
+	it('invokes `-export <outDir>/index.html -x <cart>` (headless, no display)', async () => {
+		const proc = new FakeProcess();
+		let spawnArgs: string[] = [];
+		const spawn: SpawnRunner = (_file, args) => {
+			spawnArgs = args;
+			return proc;
+		};
+		const adapter = new ShellPico8Adapter({env: {}, spawn});
+		const resultP = adapter.export({
+			cartPath: '/x/game.p8',
+			outDir,
+			htmlName: 'index.html',
+			backstopMs: 9999,
+		});
+		proc.close(0); // -x exits on its own once the export is written
+		await resultP;
+		expect(spawnArgs).toContain('-export');
+		expect(spawnArgs[spawnArgs.indexOf('-export') + 1]).toBe(
+			join(outDir, 'index.html'),
+		);
+		expect(spawnArgs).toContain('-x'); // headless
+		expect(spawnArgs).toContain('/x/game.p8');
+	});
+
+	it('collects the html + js pair PICO-8 produced', async () => {
+		const proc = new FakeProcess();
+		writeFileSync(join(outDir, 'index.html'), '<html></html>');
+		writeFileSync(join(outDir, 'index.js'), '// runtime');
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.export({
+			cartPath: '/x/game.p8',
+			outDir,
+			backstopMs: 9999,
+		});
+		proc.close(0);
+		const result = await resultP;
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value.htmlPath?.endsWith('index.html')).toBe(true);
+			expect(result.value.jsPath?.endsWith('index.js')).toBe(true);
+			expect(result.value.files.length).toBe(2);
+			expect(result.value.labelWarning).toBe(false);
+		}
+	});
+
+	it('flags labelWarning when PICO-8 prints "please capture a label first"', async () => {
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.export({
+			cartPath: '/x/game.p8',
+			outDir,
+			backstopMs: 9999,
+		});
+		proc.emit('EXPORT: index.html\nplease capture a label first\n');
+		proc.close(0);
+		const result = await resultP;
+		if (result.ok) expect(result.value.labelWarning).toBe(true);
+	});
+
+	it('reports an undefined jsPath when the export wrote nothing', async () => {
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.export({
+			cartPath: '/x/game.p8',
+			outDir, // stays empty
+			backstopMs: 9999,
+		});
+		proc.close(0);
+		const result = await resultP;
+		if (result.ok) {
+			expect(result.value.jsPath).toBeUndefined();
+			expect(result.value.files.length).toBe(0);
+		}
+	});
+});

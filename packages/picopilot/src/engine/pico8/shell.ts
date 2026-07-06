@@ -4,9 +4,12 @@ import {join} from 'node:path';
 import {
 	type DriveOptions,
 	type ExitReason,
+	EXPORT_HTML_NAME,
+	type ExportOptions,
 	type Pico8Adapter,
 	pico8NotFound,
 	type Pico8DriveResult,
+	type Pico8ExportResult,
 	type Pico8RecordResult,
 	type Pico8Result,
 	RECORD_WAV_BASENAME,
@@ -101,6 +104,25 @@ export function pico8Candidates(env: NodeJS.ProcessEnv): string[] {
 	return fromEnv !== undefined && fromEnv.length > 0
 		? [fromEnv, 'pico8']
 		: ['pico8'];
+}
+
+/**
+ * The files an export produced in `outDir`, absolute + sorted. PICO-8 writes the
+ * `<name>.html` shell and the `<name>.js` runtime payload; we return every file
+ * present so the report is faithful even if a future PICO-8 adds siblings.
+ */
+function collectExportFiles(outDir: string): string[] {
+	if (!existsSync(outDir)) return [];
+	return readdirSync(outDir)
+		.sort()
+		.map((f) => join(outDir, f))
+		.filter((p) => {
+			try {
+				return statSync(p).isFile();
+			} catch {
+				return false;
+			}
+		});
 }
 
 /** PNG files a run produced in its `-desktop` dir, sorted for deterministic order. */
@@ -220,6 +242,45 @@ export class ShellPico8Adapter implements Pico8Adapter {
 				},
 			}),
 			{stdin: true, onSpawn: (proc) => proc.writeStdin?.(options.blocks)},
+		);
+	}
+
+	/**
+	 * Exports the cart as a PICO-8 HTML bundle over the HEADLESS `-x` path (no
+	 * display needed: `pico8 <cart> -export <outDir>/<name> -x` runs the cart, writes
+	 * `<name>.html` + `<name>.js`, and exits). PICO-8 derives both file names from
+	 * the `.html` name, so passing `index.html` yields a directly-serveable pair.
+	 * A labelless cart prints "please capture a label first" and still exports (a
+	 * blank splash), surfaced as `labelWarning`. PICO-8 absent -> {@link pico8NotFound}.
+	 */
+	export(options: ExportOptions): Promise<Pico8ExportResult> {
+		const [file] = pico8Candidates(this.env) as [string, ...string[]];
+		const htmlName = options.htmlName ?? EXPORT_HTML_NAME;
+		const outPath = join(options.outDir, htmlName);
+		// `-export <name>.html` is a load-and-export command; `-x` makes it headless
+		// (run the cart, perform the export, exit) so no window/display is needed.
+		const args = ['-export', outPath, '-x', options.cartPath];
+		return this.orchestrate<Pico8ExportResult>(
+			file,
+			args,
+			// The export has no cooperative done-sentinel; `-x` exits on its own when
+			// finished, and the backstop is the net for a cart that hangs at boot.
+			{backstopMs: options.backstopMs},
+			(_exitReason, printh) => {
+				const files = collectExportFiles(options.outDir);
+				const htmlPath = files.find((p) => p.endsWith('.html'));
+				const jsPath = files.find((p) => p.endsWith('.js'));
+				return {
+					ok: true,
+					value: {
+						htmlPath,
+						jsPath,
+						files,
+						// PICO-8 warns when the cart has no `__label__` to embed as the splash.
+						labelWarning: /please capture a label first/i.test(printh),
+					},
+				};
+			},
 		);
 	}
 
