@@ -68,6 +68,48 @@ export const BUTTON_BITS = {
 export const BUTTON_BIT_MIN = 0;
 export const BUTTON_BIT_MAX = 5;
 
+/** The accepted button NAMES (and their bits) the live `input` verb parses. */
+export const BUTTON_NAMES: Readonly<Record<string, number>> = {
+	left: BUTTON_BITS.left,
+	right: BUTTON_BITS.right,
+	up: BUTTON_BITS.up,
+	down: BUTTON_BITS.down,
+	o: BUTTON_BITS.o,
+	x: BUTTON_BITS.x,
+	// Common single-letter directional aliases.
+	l: BUTTON_BITS.left,
+	r: BUTTON_BITS.right,
+	u: BUTTON_BITS.up,
+	d: BUTTON_BITS.down,
+};
+
+/**
+ * Parses a live-session `input` button spec into a single HELD-buttons byte: a
+ * comma/space-separated list of button NAMES (`left right up down o x`, plus the
+ * single-letter aliases `l r u d`), e.g. `"right o"` = hold Right + O this turn.
+ * Case-insensitive; an empty spec is the byte 0 (release all). An unknown name is
+ * a structured {@link DriveError} (`playtest-input-invalid`), never a silent skip.
+ * This is the SESSION-facing input surface (per-turn held level); the one-shot's
+ * {@link parseInputScript} is the frame-scripted surface. Both land on the same
+ * held byte -> {@link btnpEdges} machine.
+ */
+export function parseButtons(spec: string): number {
+	let held = 0;
+	for (const raw of spec.split(/[\s,]+/)) {
+		const name = raw.trim().toLowerCase();
+		if (name.length === 0) continue;
+		const bit = BUTTON_NAMES[name];
+		if (bit === undefined) {
+			throw new DriveError(
+				'playtest-input-invalid',
+				`unknown button "${raw}": use left/right/up/down/o/x (or l/r/u/d), space- or comma-separated`,
+			);
+		}
+		held |= 1 << bit;
+	}
+	return held;
+}
+
 /**
  * The FIXED command-block size in bytes (ADR-0011). Load-bearing: small unpadded
  * writes to a live `pico8 -x` stdin coalesce/drop in the OS pipe buffer, so every
@@ -95,6 +137,31 @@ export const OPCODE = {
 } as const;
 
 export type OpcodeName = keyof typeof OPCODE;
+
+/**
+ * The cart-side ACK lines the drive shim `printh`s when a command COMPLETES
+ * (ADR-0011: the resumable session WAITS for the ACK before sending the next
+ * command; the one-shot ignores them and waits only for the QUIT sentinel). One
+ * source of truth shared by the Lua shim (which prints them) and the host-side
+ * {@link import('./session.js').DriveSession} (which waits on them), so the
+ * handshake can never drift between the two ends.
+ *
+ * The load-bearing one is {@link ACK.stepDone}: a STEP's ACK fires when the frame
+ * budget REACHES ZERO (the N frames have actually advanced), NOT when the STEP
+ * block is merely read. That is what makes stepping deterministic, the host acts
+ * on a SETTLED, known frame, never mid-step. INPUT/SHOT/PAUSE complete the frame
+ * they are read (instantaneous), so they ACK at read time.
+ */
+export const ACK = {
+	/** A STEP's frame budget has fully drained (the N frames advanced). */
+	stepDone: '__PP_ACK_STEP_DONE__',
+	/** The held-buttons byte was set (INPUT). */
+	input: '__PP_ACK_INPUT__',
+	/** A screenshot was queued for the current frame (SHOT). */
+	shot: '__PP_ACK_SHOT__',
+	/** The frame budget was forced to 0 (PAUSE). */
+	pause: '__PP_ACK_PAUSE__',
+} as const;
 
 /** One command in a driven-run script (the pre-codec, human-facing form). */
 export type DriveCommand =
@@ -399,8 +466,10 @@ function definedCallbacks(lua: string): {
  *    logic-in-draw also freezes -> a stable framebuffer). A SHOT renders the
  *    current state once (via `_draw`) THEN screenshots it, so the capture always
  *    reflects the frame just drawn (never a stale/pre-draw framebuffer);
- *  - `printh`s an ACK per completed command (the resumable session waits on it;
- *    the one-shot ignores it), and the done-sentinel on QUIT.
+ *  - `printh`s an ACK when a command COMPLETES (INPUT/SHOT/PAUSE at read time; a
+ *    STEP when its frame budget drains to 0, so a step ACK means the N frames
+ *    actually ran, see {@link ACK}), which the resumable session waits on; the
+ *    one-shot ignores the ACKs and waits only for the done-sentinel on QUIT.
  *
  * The shim wraps whichever of `_update`/`_update60`/`_draw` the cart defines by
  * capturing them AFTER the cart's code runs (in `_init`-time via a deferred
@@ -437,10 +506,12 @@ function driveShim(
 		' if __drv_budget>0 then return end',
 		' local op,arg=__drv_read_block()',
 		' if op==nil then return end',
-		` if op==${OPCODE.input} then __drv_held=arg printh("__PP_ACK_INPUT__")`,
-		` elseif op==${OPCODE.step} then __drv_budget=arg printh("__PP_ACK_STEP__")`,
-		` elseif op==${OPCODE.shot} then __drv_pshot="${shotBasename}"..__drv_shot __drv_shot+=1 printh("__PP_ACK_SHOT__")`,
-		` elseif op==${OPCODE.pause} then __drv_budget=0 printh("__PP_ACK_PAUSE__")`,
+		` if op==${OPCODE.input} then __drv_held=arg printh("${ACK.input}")`,
+		// STEP does NOT ACK at read time; its ACK (`__drv_step_done`) fires when the
+		// budget drains to 0 (below), so the host learns the N frames ACTUALLY ran.
+		` elseif op==${OPCODE.step} then __drv_budget=arg`,
+		` elseif op==${OPCODE.shot} then __drv_pshot="${shotBasename}"..__drv_shot __drv_shot+=1 printh("${ACK.shot}")`,
+		` elseif op==${OPCODE.pause} then __drv_budget=0 printh("${ACK.pause}")`,
 		` elseif op==${OPCODE.quit} then printh("${sentinel}")`,
 		' end',
 		'end',
@@ -456,6 +527,9 @@ function driveShim(
 		'  __drv_budget-=1',
 		'  if __drv_tick then __drv_tick() end',
 		'  __drv_prev=__drv_held',
+		// A STEP completes (its ACK) the frame its budget reaches 0: the requested N
+		// frames have now advanced, so the host acts on a settled frame (ADR-0011).
+		` if __drv_budget==0 then printh("${ACK.stepDone}") end`,
 		'  return true',
 		' end',
 		' return false',

@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {Cart} from '../cart/index.js';
 import {DONE_SENTINEL} from './adapter.js';
 import {
+	ACK,
 	BLOCK_SIZE,
 	BUTTON_BITS,
 	BlockDecoder,
@@ -12,6 +13,7 @@ import {
 	encodeScript,
 	GENERIC_INPUT,
 	OPCODE,
+	parseButtons,
 	parseInputScript,
 	pressesToHeld,
 	SHOT_BASENAME,
@@ -99,6 +101,54 @@ describe('parseInputScript (the --input grammar)', () => {
 
 	it('rejects a backwards hold window', () => {
 		expect(() => parseInputScript('22-18:4')).toThrowError(DriveError);
+	});
+});
+
+describe('parseButtons (the live-session input grammar, ADR-0011 US #6)', () => {
+	it('parses button NAMES into a single held byte', () => {
+		expect(parseButtons('right o')).toBe(
+			(1 << BUTTON_BITS.right) | (1 << BUTTON_BITS.o),
+		);
+	});
+
+	it('accepts single-letter aliases + commas + case', () => {
+		expect(parseButtons('L, R')).toBe(
+			(1 << BUTTON_BITS.left) | (1 << BUTTON_BITS.right),
+		);
+	});
+
+	it('an empty spec is the byte 0 (release all)', () => {
+		expect(parseButtons('')).toBe(0);
+		expect(parseButtons('  ,  ')).toBe(0);
+	});
+
+	it('rejects an unknown button (structured, not silent)', () => {
+		expect(() => parseButtons('jump')).toThrowError(DriveError);
+		try {
+			parseButtons('jump');
+		} catch (e) {
+			expect((e as DriveError).code).toBe('playtest-input-invalid');
+		}
+	});
+});
+
+describe('the drive shim ACK handshake (the resumable session waits on it)', () => {
+	it('a STEP acks on COMPLETION (budget reaches 0), not at read time', () => {
+		const {cartText} = buildDriveHarness(NORMAL_CART);
+		// The STEP-DONE ack is printed when the budget hits 0 (frames advanced),
+		// so the host learns the N frames ACTUALLY ran, never mid-step.
+		expect(cartText).toContain(
+			`if __drv_budget==0 then printh("${ACK.stepDone}")`,
+		);
+		// The STEP opcode branch itself does NOT printh a read-time step ack.
+		expect(cartText).not.toContain(`__drv_budget=arg printh`);
+	});
+
+	it('INPUT/SHOT/PAUSE ack at read time (they complete their frame)', () => {
+		const {cartText} = buildDriveHarness(NORMAL_CART);
+		expect(cartText).toContain(`printh("${ACK.input}")`);
+		expect(cartText).toContain(`printh("${ACK.shot}")`);
+		expect(cartText).toContain(`printh("${ACK.pause}")`);
 	});
 });
 

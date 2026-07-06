@@ -96,7 +96,7 @@ export const spawnRunner: SpawnRunner = (file, args, env, options) => {
 };
 
 /** The candidate ways to launch PICO-8, tried in order: `PICO8_PATH`, then `pico8` on `PATH`. */
-function pico8Candidates(env: NodeJS.ProcessEnv): string[] {
+export function pico8Candidates(env: NodeJS.ProcessEnv): string[] {
 	const fromEnv = env.PICO8_PATH?.trim();
 	return fromEnv !== undefined && fromEnv.length > 0
 		? [fromEnv, 'pico8']
