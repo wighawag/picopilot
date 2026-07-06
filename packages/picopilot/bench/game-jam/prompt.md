@@ -2,7 +2,7 @@ You are in a solo, timed PICO-8 GAME JAM. You have __MINUTES__ MINUTES, total, w
 
 THEME: __THEME__
 
-The theme is deliberately generic. Interpret it on any layer(s) you like: graphics, mechanics, or story. Usually the ORIGINALITY comes from the MECHANICS, so favour a fresh mechanic over a fresh coat of paint. A clever one-idea game beats an ambitious unfinished one.
+The theme is deliberately generic. Interpret it on any layer(s) you like: graphics, mechanics, or story. Usually the ORIGINALITY comes from the MECHANICS, so favour a fresh mechanic over a fresh coat of paint. A clever one-idea game beats an ambitious unfinished one. AVOID the obvious first idea for the theme (the one everyone reaches for): a well-worn template scores low on originality even when polished. A reliable way to be original WITHOUT extra scope: COMBINE two familiar mechanics into one interaction that has not been paired before, so a single simple rule does double duty (e.g. the jump button also rewinds time; the same input steers AND shoots; dying spawns the obstacle for your next run). Two small mechanics fused is still tiny scope, but the fusion is the fresh idea.
 
 THE HARD REQUIREMENT: at the deadline you must have a PLAYABLE game in `main.p8` in this folder:
 - it boots and runs in PICO-8 without erroring,
