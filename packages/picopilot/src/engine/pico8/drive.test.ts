@@ -103,6 +103,28 @@ describe('parseInputScript (the --input grammar)', () => {
 	it('rejects a backwards hold window', () => {
 		expect(() => parseInputScript('22-18:4')).toThrowError(DriveError);
 	});
+
+	it('accepts button NAMES + keys in the timeline (unified vocabulary)', () => {
+		// 3:o == 3:4, 20:right == 20:1, and z (PICO-8 key) == the O button (4).
+		expect(parseInputScript('3:o, 20:right')).toEqual([
+			{from: 3, to: 3, bit: BUTTON_BITS.o},
+			{from: 20, to: 20, bit: BUTTON_BITS.right},
+		]);
+		expect(parseInputScript('5:z')).toEqual([{from: 5, to: 5, bit: 4}]);
+	});
+
+	it('accepts a BARE button (no frame:) as a press at frame 0', () => {
+		// The "just press this" form, matching the session `input` verb, so an agent
+		// that types `--input "z"` (the natural attempt) gets a press, not an error.
+		expect(parseInputScript('z')).toEqual([{from: 0, to: 0, bit: 4}]);
+	});
+
+	it('accepts a bare button LIST (space- or comma-separated) at frame 0', () => {
+		expect(parseInputScript('o right')).toEqual([
+			{from: 0, to: 0, bit: BUTTON_BITS.o},
+			{from: 0, to: 0, bit: BUTTON_BITS.right},
+		]);
+	});
 });
 
 describe('parseButtons (the live-session input grammar, ADR-0011 US #6)', () => {
@@ -115,6 +137,13 @@ describe('parseButtons (the live-session input grammar, ADR-0011 US #6)', () => 
 	it('accepts single-letter aliases + commas + case', () => {
 		expect(parseButtons('L, R')).toBe(
 			(1 << BUTTON_BITS.left) | (1 << BUTTON_BITS.right),
+		);
+	});
+
+	it('also accepts the z key + bit digits (shared vocabulary with --input)', () => {
+		expect(parseButtons('z')).toBe(1 << BUTTON_BITS.o);
+		expect(parseButtons('4 1')).toBe(
+			(1 << BUTTON_BITS.o) | (1 << BUTTON_BITS.right),
 		);
 	});
 

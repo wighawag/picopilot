@@ -81,6 +81,9 @@ export const BUTTON_NAMES: Readonly<Record<string, number>> = {
 	r: BUTTON_BITS.right,
 	u: BUTTON_BITS.up,
 	d: BUTTON_BITS.down,
+	// PICO-8 KEY convention: z = the O button, x = the X button. Agents type
+	// these (they think in keys), so accept them. (`x` already = the X button.)
+	z: BUTTON_BITS.o,
 };
 
 /**
@@ -96,16 +99,9 @@ export const BUTTON_NAMES: Readonly<Record<string, number>> = {
 export function parseButtons(spec: string): number {
 	let held = 0;
 	for (const raw of spec.split(/[\s,]+/)) {
-		const name = raw.trim().toLowerCase();
-		if (name.length === 0) continue;
-		const bit = BUTTON_NAMES[name];
-		if (bit === undefined) {
-			throw new DriveError(
-				'playtest-input-invalid',
-				`unknown button "${raw}": use left/right/up/down/o/x (or l/r/u/d), space- or comma-separated`,
-			);
-		}
-		held |= 1 << bit;
+		if (raw.trim().length === 0) continue;
+		// Shares the button vocabulary with `--input` (names or bit digits 0..5).
+		held |= 1 << parseButtonToken(raw);
 	}
 	return held;
 }
@@ -301,33 +297,63 @@ export function pressesToHeld(
 }
 
 /**
- * Parses an `--input` spec into scripted presses. The grammar is a comma list of
- * `frame:bit` (a single-frame press) or `from-to:bit` (a hold across the inclusive
- * window), e.g. `"3:4, 18-22:4, 20:1"` = press O at frame 3, hold O frames 18..22,
- * press right at frame 20. Whitespace around tokens is ignored. A malformed token
- * or an out-of-range bit is a structured {@link DriveError}, never a silent skip.
+ * Resolves a single BUTTON token to its bit. Accepts a NAME (`left right up down
+ * o x`, plus aliases `l r u d`, case-insensitive) OR a bare bit digit `0..5`, so
+ * BOTH `playtest` input surfaces share one button vocabulary (the `--input`
+ * timeline and the session `input` verb). An unknown token is a structured
+ * {@link DriveError}.
+ */
+export function parseButtonToken(token: string): number {
+	const t = token.trim().toLowerCase();
+	const named = BUTTON_NAMES[t];
+	if (named !== undefined) return named;
+	if (/^\d+$/.test(t)) {
+		const bit = Number(t);
+		if (bit >= BUTTON_BIT_MIN && bit <= BUTTON_BIT_MAX) return bit;
+	}
+	throw new DriveError(
+		'playtest-input-invalid',
+		`unknown button "${token}": use a name (left/right/up/down/o/x, or l/r/u/d) or a bit 0..5 (0=L 1=R 2=U 3=D 4=O 5=X)`,
+	);
+}
+
+/**
+ * Parses an `--input` spec into scripted presses. Each comma-separated token is
+ * either a TIMELINE entry `frame:button` / `from-to:button` (a press at that
+ * frame, or a hold across the inclusive window) OR a BARE button (a name/key with
+ * no `frame:`), which is a press at frame 0, so a name-only spec like `"z"` or
+ * `"o right"` (the natural "just press this" form, matching the session `input`
+ * verb) Just Works. `button` is a NAME (`o x left right up down`, aliases
+ * `l r u d`, PICO-8 keys `z`/`x`) or a bit digit `0..5`, so both `playtest` input
+ * surfaces share ONE vocabulary. E.g. `"3:o, 18-22:o, 20:right"` = press O at
+ * frame 3, hold O frames 18..22, press right at frame 20; `"z"` = press O at
+ * frame 0. Whitespace around tokens is ignored (a bare list may be space- or
+ * comma-separated). An unknown button is a structured {@link DriveError}.
  */
 export function parseInputScript(spec: string): ScriptedPress[] {
 	const presses: ScriptedPress[] = [];
-	for (const raw of spec.split(',')) {
+	// A bare button list (no `frame:` colon anywhere) is the "just press these"
+	// form: each is a press at frame 0. Allow space- OR comma-separation for it.
+	const hasTimeline = spec.includes(':');
+	const tokens = hasTimeline ? spec.split(',') : spec.split(/[\s,]+/);
+	for (const raw of tokens) {
 		const tok = raw.trim();
 		if (tok.length === 0) continue;
-		const m = /^(\d+)(?:-(\d+))?:(\d+)$/.exec(tok);
+		const m = /^(\d+)(?:-(\d+))?:(.+)$/.exec(tok);
 		if (m === null) {
-			throw new DriveError(
-				'playtest-input-invalid',
-				`bad input token "${tok}": expected "frame:bit" or "from-to:bit" (bit 0=L 1=R 2=U 3=D 4=O 5=X)`,
-			);
+			if (tok.includes(':')) {
+				throw new DriveError(
+					'playtest-input-invalid',
+					`bad input token "${tok}": expected "frame:button" or "from-to:button" (button = a name like o/right or a bit 0..5)`,
+				);
+			}
+			// A bare button = a press at frame 0.
+			presses.push({from: 0, to: 0, bit: parseButtonToken(tok)});
+			continue;
 		}
 		const from = Number(m[1]);
 		const to = m[2] !== undefined ? Number(m[2]) : from;
-		const bit = Number(m[3]);
-		if (bit < BUTTON_BIT_MIN || bit > BUTTON_BIT_MAX) {
-			throw new DriveError(
-				'playtest-input-invalid',
-				`button bit ${bit} out of range ${BUTTON_BIT_MIN}..${BUTTON_BIT_MAX} in "${tok}" (0=L 1=R 2=U 3=D 4=O 5=X)`,
-			);
-		}
+		const bit = parseButtonToken(m[3] as string);
 		if (to < from) {
 			throw new DriveError(
 				'playtest-input-invalid',

@@ -140,7 +140,7 @@ function buildPlaytestGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 				.string()
 				.optional()
 				.describe(
-					'Scripted input as a comma list of "frame:bit" (single press) or "from-to:bit" (hold), bit 0=L 1=R 2=U 3=D 4=O 5=X, e.g. "3:4, 18-22:4, 20:1". Omit for the generic one-button/runner/flappy driver.',
+					'Scripted input. Either a bare list of buttons ("z", "o right") = pressed at frame 0, or a timeline of "frame:button"/"from-to:button" ("3:o, 18-22:o, 20:right"). A button is a name (o/x/left/right/up/down, aliases l/r/u/d, PICO-8 keys z/x) or a bit 0..5. Omit for the generic one-button/runner/flappy driver.',
 				),
 			seed: z
 				.number()

@@ -4,7 +4,10 @@ slug: playtest-run-input-vs-session-input-grammar-mismatch
 spotted: 2026-07-06
 ---
 
-# `playtest run --input` and `playtest input` take different input syntaxes
+# `playtest run --input` and `playtest input` took different input syntaxes (FIXED)
+
+**RESOLVED 2026-07-06:** the two surfaces now share ONE button vocabulary. `--input` accepts a bare button list (`"z"`, `"o right"`, pressed at frame 0, matching the session `input` verb) OR a `frame:button` timeline; a button is a name / PICO-8 key (`z`/`x`) / bit `0..5`, via a shared `parseButtonToken`. The session `input` verb also accepts keys + bit digits now. So the agent's exact failing case (`--input "z"`) now Just Works. Original write-up below.
+
 
 Spotted watching a jam agent's session (the 86/100 flip-runner run). The agent tried `playtest run main.p8 --input "z"` and got a structured `playtest-input-invalid: bad input token "z": expected "frame:bit" or "from-to:bit"`. It had (reasonably) assumed button-NAME syntax, because the resumable session's `input` verb uses names.
 

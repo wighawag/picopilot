@@ -110,16 +110,20 @@ and exits, returning ONE envelope (screenshot paths + captured printh + the
 steps run). Great for a scripted playtest or benchmark judging.
 
 ```
-picopilot playtest run main.p8                       # generic driver (press-to-start + gentle presses)
-picopilot playtest run game.p8 --input "3:4, 18-22:4, 20:1"   # frame:bit script (bit 0=L 1=R 2=U 3=D 4=O 5=X)
-picopilot playtest run game.p8 --seed 1 --input "3:4"        # opt-in srand for deterministic replay
+picopilot playtest run main.p8                          # generic driver (press-to-start + gentle presses)
+picopilot playtest run game.p8 --input "z"              # just press O (a bare button = a press at frame 0)
+picopilot playtest run game.p8 --input "3:o, 18-22:o, 20:right"  # a timeline: press/hold at specific frames
+picopilot playtest run game.p8 --seed 1 --input "o"     # opt-in srand for deterministic replay
 ```
 
-`--input` is a comma list of `frame:bit` (a single press, one clean `btnp`
-edge) or `from-to:bit` (a hold). Omit it for the generic one-button/runner/flappy
-driver. `--seed n` injects `srand(n)` at cart start (never silent) so a random
-cart replays identically. Screenshots go to `--shot-dir` (default an isolated
-temp dir, NEVER `~/Desktop`).
+`--input` accepts EITHER a bare list of buttons (`"z"`, `"o right"`, pressed at
+frame 0, the same "just press these" form as the session `input` verb) OR a
+timeline of `frame:button` (a single press, one clean `btnp` edge) /
+`from-to:button` (a hold). A button is a NAME (`o x left right up down`, aliases
+`l r u d`, PICO-8 keys `z`/`x`) or a bit `0..5`. Omit `--input` for the generic
+one-button/runner/flappy driver. `--seed n` injects `srand(n)` at cart start
+(never silent) so a random cart replays identically. Screenshots go to
+`--shot-dir` (default an isolated temp dir, NEVER `~/Desktop`).
 
 ### (A) Resumable LIVE session: `start` -> `step`/`input`/`shot` -> `stop`
 
