@@ -93,16 +93,25 @@ secs_left() { echo $(( DEADLINE - $(date +%s) )); }
 TURN_CAP_SECS=420   # 7 min max per turn (steer points are finer-grained than this via elapsed checks)
 
 # Session file locator (pi writes under ~/.pi/agent/sessions/<proj>/<ts>_<id>.jsonl).
-find_session() { grep -rl "$SID" "$HOME/.pi/agent/sessions/" 2>/dev/null | head -1; }
+# pi (>= the flag-rename) no longer has --session-id/--approve. In -p (print)
+# mode tools auto-run (no approval prompt is possible), and a session is
+# auto-created under a cwd-derived dir in ~/.pi/agent/sessions/. We continue a
+# run by locating THAT session file and passing it to --session. The workdir
+# basename (a unique timestamped slug) is embedded in the mangled dir name, so
+# we glob for it rather than replicate pi's path-mangling.
+WD_BASE="$(basename "$WORKDIR")"
+find_session() {
+  ls -t "$HOME/.pi/agent/sessions/"*"${WD_BASE}"*/*.jsonl 2>/dev/null | head -1
+}
 
 run_turn() { # $1 = message; runs one bounded pi turn in the workdir
   local msg="$1" sfile
   sfile="$(find_session)"
   ( cd "$WORKDIR"
     if [ -z "$sfile" ]; then
-      timeout "$TURN_CAP_SECS" pi -p --session-id "$SID" "${MODEL_ARGS[@]}" --approve "$msg"
+      timeout "$TURN_CAP_SECS" pi -p "${MODEL_ARGS[@]}" "$msg"
     else
-      timeout "$TURN_CAP_SECS" pi -p --session "$sfile" "${MODEL_ARGS[@]}" --approve "$msg"
+      timeout "$TURN_CAP_SECS" pi -p --session "$sfile" "${MODEL_ARGS[@]}" "$msg"
     fi
   ) 2>&1 | tail -40
 }
@@ -204,8 +213,12 @@ fi
 if [ "$DO_JUDGE" = "1" ] && [ "$HAVE_CART" = "1" ]; then
   echo ">>> judging..."
   JPROMPT="$(sed -e "s|__THEME__|$THEME|g" -e "s|__MINUTES__|$MINUTES|g" "$HERE/judge.md")"
+  # Keep the judge's session OUT of the agent's cwd-derived session dir (they
+  # share $WORKDIR as cwd) by giving it an explicit, isolated session dir. This
+  # preserves the "agent session vs judge session" separation the old
+  # --session-id "judge-..." gave us.
   ( cd "$WORKDIR"
-    timeout 600 pi -p --session-id "judge-$SID" "${MODEL_ARGS[@]}" --approve "$JPROMPT"
+    timeout 600 pi -p --session-dir "$ART/judge-session" "${MODEL_ARGS[@]}" "$JPROMPT"
   ) 2>&1 | tee "$ART/verdict.txt" | tail -60
 fi
 
