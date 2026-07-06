@@ -5,6 +5,7 @@ import {registerInit} from './commands/init.js';
 import {registerLint} from './commands/lint.js';
 import {registerMinify} from './commands/minify.js';
 import {registerMusic} from './commands/music.js';
+import {registerPlaytest} from './commands/playtest.js';
 import {registerRun} from './commands/run.js';
 import {registerSfx} from './commands/sfx.js';
 import {registerTokens} from './commands/tokens.js';
@@ -47,6 +48,7 @@ export function createCli(): Cli.Cli {
 	registerMinify(cli);
 	registerVerify(cli);
 	registerRun(cli);
+	registerPlaytest(cli);
 	registerSfx(cli);
 	registerMusic(cli);
 	registerAudio(cli);

@@ -25,6 +25,8 @@ class FakeProcess implements Pico8Process {
 	private closeCb: (code: number | null) => void = () => {};
 	private errorCb: (e: NodeJS.ErrnoException) => void = () => {};
 	killed = false;
+	/** The bytes written to stdin (the `drive` command-block transport). */
+	stdinBytes: number[] = [];
 
 	onStdout(cb: (c: string) => void): void {
 		this.stdoutCb = cb;
@@ -34,6 +36,9 @@ class FakeProcess implements Pico8Process {
 	}
 	onError(cb: (e: NodeJS.ErrnoException) => void): void {
 		this.errorCb = cb;
+	}
+	writeStdin(bytes: Uint8Array): void {
+		for (const b of bytes) this.stdinBytes.push(b);
 	}
 	kill(): void {
 		this.killed = true;
@@ -322,12 +327,119 @@ describe('ShellPico8Adapter.record: real A/V session + WAV isolation', () => {
 		if (result.ok) expect(result.value.wavPath).toBeUndefined();
 	});
 
-	it('fires the backstop when the cart never signals (never a hang)', async () => {
+	it('fires the record backstop when the cart never signals (never a hang)', async () => {
 		const proc = new FakeProcess();
 		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
 		const resultP = adapter.record({
 			cartPath: '/x/harness.p8',
 			wavDir,
+			backstopMs: 20,
+		});
+		const result = await resultP;
+		if (result.ok) expect(result.value.exitReason).toBe('timeout');
+		expect(proc.killed).toBe(true);
+	});
+});
+
+describe('ShellPico8Adapter.drive: PICO-8 absent (the CI-testable boundary)', () => {
+	it('returns structured pico8-not-found when the binary ENOENTs', async () => {
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.drive({
+			cartPath: '/x/driven.p8',
+			shotDir: '/x/shots',
+			blocks: new Uint8Array([1, 0, 0, 0]),
+			backstopMs: 1000,
+		});
+		proc.fail('ENOENT');
+		const result = await resultP;
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('pico8-not-found');
+			expect(result.needs).toContain('pico8');
+		}
+	});
+});
+
+describe('ShellPico8Adapter.drive: headless capture + block transport', () => {
+	let shotDir: string;
+	beforeEach(() => {
+		shotDir = mkdtempSync(join(tmpdir(), 'pico8-drive-'));
+	});
+	afterEach(() => rmSync(shotDir, {recursive: true, force: true}));
+
+	it('launches headless `-x` + `-desktop <shotDir>` (never a real ~/Desktop write)', async () => {
+		const proc = new FakeProcess();
+		let spawnArgs: string[] = [];
+		let stdinRequested = false;
+		const spawn: SpawnRunner = (_file, args, _env, options) => {
+			spawnArgs = args;
+			stdinRequested = options?.stdin === true;
+			return proc;
+		};
+		const adapter = new ShellPico8Adapter({env: {}, spawn});
+		const resultP = adapter.drive({
+			cartPath: '/x/driven.p8',
+			shotDir,
+			blocks: new Uint8Array([2, 16, 0, 0]),
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		await resultP;
+		expect(spawnArgs).toContain('-x');
+		expect(spawnArgs).toContain('-desktop');
+		expect(spawnArgs[spawnArgs.indexOf('-desktop') + 1]).toBe(shotDir);
+		// The driven run needs a LIVE stdin to pipe the command blocks into.
+		expect(stdinRequested).toBe(true);
+	});
+
+	it('writes the whole command-block stream to the cart stdin (one-shot up front)', async () => {
+		const proc = new FakeProcess();
+		const blocks = new Uint8Array([2, 16, 0, 0, 1, 1, 0, 0, 5, 0, 0, 0]);
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.drive({
+			cartPath: '/x/driven.p8',
+			shotDir,
+			blocks,
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		await resultP;
+		// Every byte of the block stream reached stdin, in order (fixed-size blocks).
+		expect(proc.stdinBytes).toEqual([...blocks]);
+	});
+
+	it('collects the SHOT screenshots + ends on the sentinel', async () => {
+		const proc = new FakeProcess();
+		writeFileSync(join(shotDir, 'play1.png'), 'x');
+		writeFileSync(join(shotDir, 'play0.png'), 'x');
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.drive({
+			cartPath: '/x/driven.p8',
+			shotDir,
+			blocks: new Uint8Array([5, 0, 0, 0]),
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		const result = await resultP;
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value.screenshots.map((p) => p.split('/').pop())).toEqual([
+				'play0.png',
+				'play1.png',
+			]);
+			expect(result.value.exitReason).toBe('sentinel');
+		}
+		expect(proc.killed).toBe(true);
+	});
+
+	it('fires the drive backstop when the driven cart never signals (never a hang)', async () => {
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const resultP = adapter.drive({
+			cartPath: '/x/driven.p8',
+			shotDir,
+			blocks: new Uint8Array([1, 1, 0, 0]),
 			backstopMs: 20,
 		});
 		const result = await resultP;

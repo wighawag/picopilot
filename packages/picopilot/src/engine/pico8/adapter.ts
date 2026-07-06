@@ -84,6 +84,51 @@ export interface Pico8RecordOk {
 }
 
 /**
+ * A completed DRIVE run's results (ADR-0011, `playtest`). Same shape family as
+ * {@link RunReport}: `screenshots` are the PNGs the driven cart wrote at the SHOT
+ * points (named `<basename>0.png`, ...), `printh` is the captured stdout (the
+ * cart's ACKs + the done-sentinel + any cart printh), `exitReason` says how it
+ * ended. A driven run is a run whose input + frame loop the harness owned.
+ */
+export interface DriveReport {
+	readonly screenshots: readonly string[];
+	readonly printh: string;
+	readonly exitReason: ExitReason;
+}
+
+/** A successful drive call carrying the {@link DriveReport}. */
+export interface Pico8DriveOk {
+	readonly ok: true;
+	readonly value: DriveReport;
+}
+
+/**
+ * The result {@link Pico8Adapter.drive} returns: a {@link DriveReport} or the
+ * structured {@link Pico8NotFound} (PICO-8 absent), mirroring {@link Pico8Result}.
+ */
+export type Pico8DriveResult = Pico8DriveOk | Pico8NotFound;
+
+/**
+ * Options for a single {@link Pico8Adapter.drive} (ADR-0011). The cart is the
+ * THROWAWAY driven cart the drive-transform produced; `blocks` are the encoded
+ * FIXED-SIZE command blocks piped to its live `-x` stdin (the load-bearing
+ * transport: small unpadded writes coalesce/drop, so the whole block stream is
+ * written up front for the one-shot). Screenshots land in `shotDir` (`-desktop`).
+ */
+export interface DriveOptions {
+	/** Absolute path to the throwaway driven `.p8` cart to run. */
+	readonly cartPath: string;
+	/** The run-controlled dir PICO-8 writes screenshots into (`-desktop <dir>`). */
+	readonly shotDir: string;
+	/** The encoded fixed-size command blocks to pipe to the cart's stdin. */
+	readonly blocks: Uint8Array;
+	/** The stdout line that ends the run when matched (defaults to {@link DONE_SENTINEL}). */
+	readonly sentinel?: string;
+	/** The hard backstop in ms: kill PICO-8 if it neither signals nor exits by then. */
+	readonly backstopMs: number;
+}
+
+/**
  * The result {@link Pico8Adapter.record} returns: a {@link RecordReport} or the
  * structured {@link Pico8NotFound} (PICO-8 absent), mirroring {@link Pico8Result}.
  */
@@ -159,6 +204,16 @@ export interface Pico8Adapter {
 	 * manual/opt-in tier; CI drives a fake runner + the absent boundary.
 	 */
 	record(options: RecordOptions): Promise<Pico8RecordResult>;
+
+	/**
+	 * Launches PICO-8 on the THROWAWAY driven cart (`-desktop <shotDir> -x`),
+	 * pipes the encoded FIXED-SIZE command blocks to its live stdin (the input +
+	 * frame-loop transport, ADR-0011), ends on the sentinel (backstop as the net),
+	 * and collects the SHOT screenshots + printh + exit reason. Returns
+	 * {@link Pico8NotFound} when PICO-8 is absent. Live drive-and-capture is a
+	 * manual/opt-in tier; CI drives a fake runner + the absent boundary.
+	 */
+	drive(options: DriveOptions): Promise<Pico8DriveResult>;
 }
 
 /** The default WAV basename a recorded cart passes to `extcmd("set_filename")`. */
