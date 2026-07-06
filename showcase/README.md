@@ -22,9 +22,14 @@ From the repo root, with PICO-8 available:
 node showcase/fliprun/make-label.mjs   # writes showcase/fliprun/label.png
 picopilot export showcase/fliprun/main.p8 website/static/games/fliprun/ \
   --label showcase/fliprun/label.png
+# Also copy the label next to the export so the showcase card can show it as a
+# thumbnail (the export bakes the label into index.js, but the card needs a
+# standalone image).
+cp showcase/fliprun/label.png website/static/games/fliprun/label.png
 ```
 
-Then list the game in `website/src/lib/games.ts`.
+Then list the game in `website/src/lib/games.ts`. Set `hasLabel: true` when the
+export folder has a `label.png`, so the showcase card renders it.
 
 ## fliprun
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import {base} from '$app/paths';
-	import {games} from '$lib/games';
+	import {games, gameLabel} from '$lib/games';
 </script>
 
 <section>
@@ -24,16 +24,28 @@
 	{:else}
 		<ul class="mt-8 grid gap-4 sm:grid-cols-2">
 			{#each games as game (game.slug)}
+				{@const label = gameLabel(game)}
 				<li>
 					<a
 						href="{base}/showcase/{game.slug}/"
-						class="block rounded-lg border border-neutral-800 p-5 transition hover:border-emerald-600 hover:bg-neutral-900/50"
+						class="block overflow-hidden rounded-lg border border-neutral-800 transition hover:border-emerald-600 hover:bg-neutral-900/50"
 					>
-						<h2 class="text-lg font-semibold">{game.title}</h2>
-						<p class="mt-1 text-sm text-neutral-400">{game.blurb}</p>
-						{#if game.author}
-							<p class="mt-2 text-xs text-neutral-500">by {game.author}</p>
+						{#if label}
+							<img
+								src={label}
+								alt="{game.title} title card"
+								width="128"
+								height="128"
+								class="aspect-square w-full border-b border-neutral-800 bg-black object-cover [image-rendering:pixelated]"
+							/>
 						{/if}
+						<div class="p-5">
+							<h2 class="text-lg font-semibold">{game.title}</h2>
+							<p class="mt-1 text-sm text-neutral-400">{game.blurb}</p>
+							{#if game.author}
+								<p class="mt-2 text-xs text-neutral-500">by {game.author}</p>
+							{/if}
+						</div>
 					</a>
 				</li>
 			{/each}

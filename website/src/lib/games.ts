@@ -16,6 +16,12 @@ export interface Game {
 	/** Optional author/credit line. */
 	readonly author?: string;
 	/**
+	 * Whether this slug's export folder holds a `label.png` (PICO-8's 128x128
+	 * title card, copied next to the export). When true the showcase card shows
+	 * it as a thumbnail; when omitted/false the card is text-only.
+	 */
+	readonly hasLabel?: boolean;
+	/**
 	 * Which export shape this slug's folder holds:
 	 *  - 'standalone': an `index.html` + `index.js` pair (the default export).
 	 *  - 'payload': just `index.js` (a `--payload-only` export); the player
@@ -38,6 +44,7 @@ export const games: readonly Game[] = [
 			'A one-button gravity-flip runner. Flip between floor and ceiling to dodge spikes and grab orbs. Built in a 50-minute PICO-8 game-jam session with picopilot.',
 		author: 'picopilot game-jam',
 		shape: 'standalone',
+		hasLabel: true,
 	},
 ];
 
@@ -49,4 +56,12 @@ export function findGame(slug: string): Game | undefined {
 /** The public URL of a game's export folder, respecting the site base path. */
 export function gameDir(slug: string): string {
 	return `${base}/games/${slug}`;
+}
+
+/**
+ * The public URL of a game's label image (PICO-8's title card), or undefined
+ * when the game has no `label.png` in its export folder.
+ */
+export function gameLabel(game: Game): string | undefined {
+	return game.hasLabel ? `${gameDir(game.slug)}/label.png` : undefined;
 }
