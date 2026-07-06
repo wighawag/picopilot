@@ -6,7 +6,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import {tmpdir} from 'node:os';
-import {isAbsolute, join, resolve} from 'node:path';
+import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {type Cli, Cli as IncurCli, z} from 'incur';
 import {
 	buildDriveHarness,
@@ -55,6 +55,28 @@ const START_POLL_MS = 50;
 /** Resolves a path argument to an absolute path (relative to cwd). */
 function resolvePath(p: string): string {
 	return isAbsolute(p) ? p : resolve(process.cwd(), p);
+}
+
+/**
+ * A `#include` resolver for the drive-transform, bound to the SOURCE cart's dir:
+ * picopilot's standard scaffold is `main.p8` = `#include main.lua`, and the
+ * driven cart runs from a throwaway temp dir where `main.lua` is absent, so the
+ * transform inlines includes to be self-contained. Reads the included file
+ * relative to the cart (absolute paths honoured); returns `undefined` if it
+ * cannot be read (the directive is then left verbatim).
+ */
+function makeReadInclude(cartPath: string): (p: string) => string | undefined {
+	const base = dirname(cartPath);
+	return (includePath) => {
+		const full = isAbsolute(includePath)
+			? includePath
+			: join(base, includePath);
+		try {
+			return readFileSync(full, 'utf8');
+		} catch {
+			return undefined;
+		}
+	};
 }
 
 /** A small sleep for the `start` readiness poll. */
@@ -278,6 +300,7 @@ async function runOneShot<R>(
 			frames: options.frames,
 			seed: options.seed,
 			sentinel: options.sentinel,
+			readInclude: makeReadInclude(cartPath),
 		});
 	} catch (e) {
 		if (e instanceof DriveError) {
@@ -473,6 +496,7 @@ function registerSessionVerbs(playtest: Cli.Cli): void {
 				harness = buildDriveHarness(readFileSync(cartPath, 'utf8'), {
 					seed: options.seed,
 					shotBasename: SHOT_BASENAME,
+					readInclude: makeReadInclude(cartPath),
 				});
 			} catch (e) {
 				if (e instanceof DriveError) {

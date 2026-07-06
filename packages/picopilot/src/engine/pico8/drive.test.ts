@@ -16,6 +16,7 @@ import {
 	parseButtons,
 	parseInputScript,
 	pressesToHeld,
+	resolveIncludes,
 	SHOT_BASENAME,
 } from './drive.js';
 
@@ -231,7 +232,62 @@ describe('buildDriveScript (the one-shot command sequence)', () => {
 	});
 });
 
+describe('resolveIncludes (#include inlining so the driven cart is self-contained)', () => {
+	it('inlines a single #include with the resolved file text', () => {
+		const out = resolveIncludes('#include main.lua', (p) =>
+			p === 'main.lua' ? 'function _update() end' : undefined,
+		);
+		expect(out).toBe('function _update() end');
+	});
+
+	it('leaves an unresolvable #include verbatim (best-effort)', () => {
+		const out = resolveIncludes('#include gone.lua', () => undefined);
+		expect(out).toBe('#include gone.lua');
+	});
+
+	it('leaves the lua unchanged when no resolver is given', () => {
+		expect(resolveIncludes('#include main.lua', undefined)).toBe(
+			'#include main.lua',
+		);
+	});
+
+	it('resolves recursively (an included file may itself #include)', () => {
+		const files: Record<string, string> = {
+			'main.lua': 'a=1\n#include more.lua',
+			'more.lua': 'b=2',
+		};
+		expect(resolveIncludes('#include main.lua', (p) => files[p])).toBe(
+			'a=1\nb=2',
+		);
+	});
+
+	it('guards against an include cycle (leaves the repeat verbatim)', () => {
+		const files: Record<string, string> = {'a.lua': '#include a.lua'};
+		// Does not infinite-loop; the self-reference is left as-is.
+		expect(resolveIncludes('#include a.lua', (p) => files[p])).toBe(
+			'#include a.lua',
+		);
+	});
+});
+
 describe('buildDriveHarness (the throwaway driven cart, ADR-0011)', () => {
+	it('inlines #include so a scaffold cart\u2019s callbacks are wrapped + self-contained', () => {
+		// picopilot\u2019s standard scaffold: __lua__ is a single `#include main.lua`,
+		// the real _update/_draw live in main.lua. Without inlining, definedCallbacks
+		// sees no callback AND the driven cart can\u2019t #include from its temp dir.
+		const scaffold = `${HEADER}__lua__\n#include main.lua\n`;
+		const {cartText} = buildDriveHarness(scaffold, {
+			readInclude: (p) =>
+				p === 'main.lua'
+					? 'function _update() end\nfunction _draw() cls() end'
+					: undefined,
+		});
+		// The include is gone (inlined), the real callback is present + wrapped.
+		expect(cartText).not.toContain('#include');
+		expect(cartText).toContain('__drv_tick=_update');
+		expect(cartText).toContain('function _draw()');
+	});
+
 	it('prepends the btn/btnp shim reading serial(0x804)', () => {
 		const {cartText} = buildDriveHarness(NORMAL_CART);
 		expect(cartText).toContain('serial(0x804');

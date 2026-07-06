@@ -387,6 +387,47 @@ export interface DriveSpec {
 	readonly sentinel?: string;
 	/** The base filename the SHOT command names each screenshot (defaults to `play`). */
 	readonly shotBasename?: string;
+	/**
+	 * Resolver for `#include <file>` directives in the cart's Lua (picopilot's
+	 * standard scaffold is `__lua__` = a single `#include main.lua`). The driven
+	 * cart runs from a THROWAWAY temp dir where the included files do not exist, so
+	 * the transform must INLINE them to be self-contained. Given an include path
+	 * (relative to the source cart), return the file's text, or `undefined` if it
+	 * cannot be read (the directive is then left verbatim). Injected (not `fs`
+	 * imported) so the transform stays pure + unit-testable. Omitted => includes
+	 * are left as-is (fine for an already-inlined cart).
+	 */
+	readonly readInclude?: (includePath: string) => string | undefined;
+}
+
+/**
+ * Inlines `#include <file>` directives in a cart's Lua so the driven cart is
+ * self-contained (it runs from a throwaway temp dir where the included files are
+ * absent, and `definedCallbacks` must SEE the real `_update`/`_draw` that live in
+ * the included file). Matches PICO-8's own `#include`: a line whose first
+ * non-space token is `#include`, the rest of the line is the path. Resolves
+ * recursively (an included file may itself `#include`), guarding against cycles.
+ * A path the resolver cannot read is left verbatim (best-effort, like the rest of
+ * the transform). With no resolver, the Lua is returned unchanged.
+ */
+export function resolveIncludes(
+	lua: string,
+	readInclude: ((includePath: string) => string | undefined) | undefined,
+	seen: ReadonlySet<string> = new Set(),
+): string {
+	if (readInclude === undefined) return lua;
+	return lua
+		.split('\n')
+		.map((line) => {
+			const m = /^\s*#include\s+(.+?)\s*$/.exec(line);
+			if (m === null) return line;
+			const path = m[1] as string;
+			if (seen.has(path)) return line; // cycle guard: leave it
+			const content = readInclude(path);
+			if (content === undefined) return line; // unreadable: leave verbatim
+			return resolveIncludes(content, readInclude, new Set([...seen, path]));
+		})
+		.join('\n');
 }
 
 /** The default base filename SHOT names each screenshot (`play0.png`, ...). */
@@ -626,7 +667,13 @@ export function buildDriveHarness(
 
 	const sentinel = spec.sentinel ?? DONE_SENTINEL;
 	const shotBasename = spec.shotBasename ?? SHOT_BASENAME;
-	const cartLua = cart.getSection('lua') ?? '';
+	// Inline #include directives so the driven cart is self-contained in its temp
+	// dir AND so definedCallbacks sees the real _update/_draw (which live in the
+	// included file for picopilot's standard `#include main.lua` scaffold).
+	const cartLua = resolveIncludes(
+		cart.getSection('lua') ?? '',
+		spec.readInclude,
+	);
 	const callbacks = definedCallbacks(cartLua);
 
 	// The opt-in srand: injected at the TOP of the cart's own code iff a seed is

@@ -117,9 +117,11 @@ change to it: on a THROWAWAY copy it redefines `btn`/`btnp` to read a
 harness-piped held-buttons byte (reconstructing `btnp` edges) and OWNS the frame
 loop, so it advances an exact number of frames, PAUSES (freezing all state,
 including logic in `_draw`) for a clean screenshot, and captures gameplay (not
-the title). Your `main.p8` is never mutated. `playtest` requires PICO-8 and
-returns the same structured `pico8-not-found` boundary as `run` when it is
-absent. (Mechanism: ADR-0011.)
+the title). Your `main.p8` is never mutated. It handles the standard scaffold
+(`main.p8` = `#include main.lua`) automatically, inlining the include so the
+driven copy is self-contained (no manual pack/build step, just point it at
+`main.p8`). `playtest` requires PICO-8 and returns the same structured
+`pico8-not-found` boundary as `run` when it is absent. (Mechanism: ADR-0011.)
 
 There are three ways to drive a cart; pick by how much continuity you need.
 
