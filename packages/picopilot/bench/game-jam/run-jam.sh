@@ -15,6 +15,13 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PICOPILOT_BIN="$(cd "$HERE/../../dist" && pwd)/bin.js"
+# picopilot's authored skills (incl. the game-jam pair). The jam prompt POINTS
+# AT the game-jam skill rather than inlining the guidance, so the agent must be
+# able to DISCOVER it. We pass this dir to `pi --skill` (which recurses and
+# loads every skill subdir) so the run sees the skills WITHOUT polluting the
+# user's global ~/.agents/skills. The judge does NOT get these (it has its own
+# rubric).
+SKILLS_DIR="$(cd "$HERE/../../src/skills" && pwd)"
 
 THEME=""
 MINUTES=50
@@ -109,9 +116,9 @@ run_turn() { # $1 = message; runs one bounded pi turn in the workdir
   sfile="$(find_session)"
   ( cd "$WORKDIR"
     if [ -z "$sfile" ]; then
-      timeout "$TURN_CAP_SECS" pi -p "${MODEL_ARGS[@]}" "$msg"
+      timeout "$TURN_CAP_SECS" pi -p --skill "$SKILLS_DIR" "${MODEL_ARGS[@]}" "$msg"
     else
-      timeout "$TURN_CAP_SECS" pi -p --session "$sfile" "${MODEL_ARGS[@]}" "$msg"
+      timeout "$TURN_CAP_SECS" pi -p --session "$sfile" --skill "$SKILLS_DIR" "${MODEL_ARGS[@]}" "$msg"
     fi
   ) 2>&1 | tail -40
 }

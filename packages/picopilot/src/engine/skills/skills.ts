@@ -22,11 +22,20 @@ import {Cli, SyncSkills} from 'incur';
  */
 
 /**
- * The five picopilot discipline skills (US #20), authored as SKILL.md files
- * under {@link skillsSourceDir}. They load on-demand by concern and carry the
- * hard-won workflow knowledge (the `#include` discipline, the token breakdown,
- * the `gfx render`→look→`gfx set`→fix loop incl. the non-multimodal fallback,
- * composing in picopilot-MML) so an agent gets it without bloating every turn.
+ * The authored picopilot skills (US #20 discipline skills + the game skills),
+ * as SKILL.md files under {@link skillsSourceDir}. They load on-demand by
+ * concern and carry the hard-won workflow knowledge (the `#include` discipline,
+ * the token breakdown, the `gfx render`→look→`gfx set`→fix loop incl. the
+ * non-multimodal fallback, composing in picopilot-MML) so an agent gets it
+ * without bloating every turn.
+ *
+ * The GAME skills are a composed pair (grilled design in
+ * work/notes/ideas/game-jam-design-skill.md): `game-jam` (model-invoked, the
+ * clock+theme discipline) POINTS AT `game-design-reference` (a user-invoked
+ * reference body of universal design principles, `disable-model-invocation`, so
+ * it costs no per-turn context and is reached only by pointer, not fired on a
+ * vague trigger). Both ship engine-packaged here; `game-design-reference`'s
+ * CONTENT is engine-agnostic.
  *
  * They ship ALONGSIDE the per-command skills incur auto-generates from the
  * command surface (`sync: { depth: 1 }`), pulled in via an `include` glob; the
@@ -39,6 +48,8 @@ export const SKILL_NAMES = [
 	'picopilot-art',
 	'picopilot-audio',
 	'picopilot-debug',
+	'game-design-reference',
+	'game-jam',
 ] as const;
 
 /**

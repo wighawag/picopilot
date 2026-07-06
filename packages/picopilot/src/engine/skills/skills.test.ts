@@ -22,7 +22,7 @@ function readSkill(name: string): string {
 }
 
 describe('picopilot skills: generation output (the authored discipline skills)', () => {
-	it('ships exactly the five named US #20 skills, each with valid frontmatter', () => {
+	it('ships exactly the named authored skills, each with valid frontmatter', () => {
 		expect([...SKILL_NAMES].sort()).toEqual(
 			[
 				'picopilot-art',
@@ -30,6 +30,8 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 				'picopilot-code',
 				'picopilot-debug',
 				'picopilot-overview',
+				'game-design-reference',
+				'game-jam',
 			].sort(),
 		);
 		for (const name of SKILL_NAMES) {
@@ -39,6 +41,47 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 			expect(md).toMatch(new RegExp(`^name:\\s*${name}$`, 'm'));
 			expect(md).toMatch(/^description:\s*.+/m);
 		}
+	});
+
+	it('game-design-reference is a USER-INVOKED reference body (no per-turn context load)', () => {
+		const md = readSkill('game-design-reference');
+		// The invocation stance: only game-design-reference disables model
+		// invocation, so it is reached by pointer (from game-jam), never fired on a
+		// vague trigger, and costs no context every turn. game-jam stays
+		// model-invoked (no such line).
+		expect(md).toMatch(/^disable-model-invocation:\s*true$/m);
+		expect(readSkill('game-jam')).not.toMatch(/^disable-model-invocation:/m);
+	});
+
+	it('game-design-reference carries the universal principles + method-not-menu originality', () => {
+		const md = readSkill('game-design-reference');
+		// Fairness: BOTH reachability AND the skipped hazard-avoidability check.
+		expect(md.toLowerCase()).toContain('reachability');
+		expect(md.toLowerCase()).toContain('avoidability');
+		// Human reaction budget in PICO-8's 30fps terms.
+		expect(md).toContain('200-300ms');
+		expect(md).toContain('frame-perfect');
+		// Visibility (draw what you spr()).
+		expect(md).toContain('spr(');
+		// Originality is a METHOD with a self-check, and lists NO concrete
+		// mechanics (the answer-menu trap). Assert the caveat that guards it.
+		expect(md.toLowerCase()).toContain('self-check');
+		expect(md.toLowerCase()).toMatch(/no (example |concrete )?mechanic/);
+	});
+
+	it('game-jam carries the clock discipline and POINTS AT game-design-reference (does not re-teach it)', () => {
+		const md = readSkill('game-jam');
+		// Composition: it points at the reference body by name.
+		expect(md).toContain('game-design-reference');
+		// The jam-specific clock discipline (the slice/deepen/triage phases).
+		expect(md.toLowerCase()).toContain('playable slice');
+		expect(md.toLowerCase()).toContain('triage');
+		// The situated design calls the clock forces (jam-specific, live nowhere
+		// else): the dead state and the frame-perfect superhuman level.
+		expect(md.toLowerCase()).toContain('dead state');
+		expect(md).toContain('frame-perfect');
+		// It interprets the theme itself (decision B) and ships JAM.md.
+		expect(md).toContain('JAM.md');
 	});
 
 	it('picopilot-overview carries the #include discipline', () => {
