@@ -1,5 +1,12 @@
 import {spawn} from 'node:child_process';
-import {existsSync, readdirSync, statSync} from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	statSync,
+} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {
 	type DriveOptions,
@@ -58,6 +65,36 @@ export type SpawnRunner = (
  * watch. A spawn failure surfaces via `onError` (ENOENT ⇒ absent). `kill` sends
  * SIGKILL to the whole tree (`detached` + negative pid) so a hung PICO-8 dies.
  */
+/**
+ * An isolated directory to hand PICO-8 as its `-home`, so it writes its config /
+ * data tree (`config.txt`, `log.txt`, `sdl_controllers.txt`, `backup/`, `carts/`,
+ * `bbs/`, `cdata/`, `cstore/`, `plates/`) THERE and never litters the caller's
+ * CWD. Without `-home`, PICO-8 creates that tree in whatever directory it was
+ * spawned from, e.g. a user's repo root (see
+ * work/notes/observations/pico8-appimage-writes-config-into-cwd.md). Verified:
+ * `-home <dir>` fully redirects every one of those files/dirs.
+ *
+ * One dir per process, created lazily under the OS temp dir and reused by every
+ * launch (run/drive/export/record/session). It is throwaway config, so OS temp
+ * cleanup reclaims it; picopilot never needs its contents.
+ */
+let cachedHome: string | undefined;
+export function pico8HomeDir(): string {
+	if (cachedHome !== undefined && existsSync(cachedHome)) return cachedHome;
+	cachedHome = mkdtempSync(join(tmpdir(), 'picopilot-pico8-home-'));
+	return cachedHome;
+}
+
+/**
+ * Prepend `-home <isolatedDir>` to a PICO-8 arg list so its config/data never
+ * land in the CWD. Applied at every spawn site.
+ */
+export function withPico8Home(args: string[]): string[] {
+	const home = pico8HomeDir();
+	mkdirSync(home, {recursive: true});
+	return ['-home', home, ...args];
+}
+
 export const spawnRunner: SpawnRunner = (file, args, env, options) => {
 	// `drive` pipes fixed-size command blocks to stdin; `run`/`record` detach it so
 	// the cart never blocks on console input.
@@ -326,7 +363,7 @@ export class ShellPico8Adapter implements Pico8Adapter {
 		return new Promise<R | ReturnType<typeof pico8NotFound>>((resolve) => {
 			let settled = false;
 			let backstop: NodeJS.Timeout | undefined;
-			const proc = this.spawnRun(file, args, this.env, {
+			const proc = this.spawnRun(file, withPico8Home(args), this.env, {
 				stdin: spawnOpts?.stdin,
 			});
 

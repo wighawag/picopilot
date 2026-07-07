@@ -5,8 +5,10 @@ import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {DONE_SENTINEL, RECORD_WAV_BASENAME} from './adapter.js';
 import {
 	type Pico8Process,
+	pico8HomeDir,
 	ShellPico8Adapter,
 	type SpawnRunner,
+	withPico8Home,
 } from './shell.js';
 
 /**
@@ -124,6 +126,35 @@ describe('ShellPico8Adapter: sentinel-driven termination', () => {
 		await resultP;
 		expect(spawnArgs).toContain('-p');
 		expect(spawnArgs[spawnArgs.indexOf('-p') + 1]).toBe('rrrrz');
+	});
+
+	it('prepends `-home <isolated tmp dir>` so PICO-8 config/data never litters the CWD', async () => {
+		const proc = new FakeProcess();
+		let spawnArgs: string[] = [];
+		const spawn: SpawnRunner = (_file, args) => {
+			spawnArgs = args;
+			return proc;
+		};
+		const adapter = new ShellPico8Adapter({env: {}, spawn});
+		const resultP = adapter.run({
+			cartPath: '/x/m.p8',
+			shotDir,
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		await resultP;
+		expect(spawnArgs).toContain('-home');
+		const home = spawnArgs[spawnArgs.indexOf('-home') + 1];
+		// Points at an isolated temp dir, NOT the process CWD.
+		expect(home.startsWith(tmpdir())).toBe(true);
+		expect(home).not.toBe(process.cwd());
+		// The pure helper is stable and prepends, not appends.
+		expect(withPico8Home(['-x', 'c.p8'])).toEqual([
+			'-home',
+			pico8HomeDir(),
+			'-x',
+			'c.p8',
+		]);
 	});
 
 	it('omits `-p` when no input is given', async () => {

@@ -19,7 +19,7 @@ import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pico8NotFound} from './adapter.js';
 import {serveSession} from './session-daemon.js';
-import {spawnRunner, pico8Candidates} from './shell.js';
+import {spawnRunner, pico8Candidates, withPico8Home} from './shell.js';
 import type {SessionPaths} from './supervisor.js';
 
 /** The marker file the daemon writes into the session dir when PICO-8 is absent. */
@@ -53,7 +53,9 @@ export function runDaemon(
 	// Live session: `-desktop <shotDir>` for SHOT captures, `-x` headless, stdin
 	// piped so the daemon can send fixed-size command blocks per verb.
 	const args = ['-desktop', config.paths.shotDir, '-x', config.cartPath];
-	const proc = spawn(file, args, env, {stdin: true});
+	// `-home <isolated>` so PICO-8's config/data tree lands in a throwaway dir, not
+	// the caller's CWD (matches the shell adapter's spawn sites).
+	const proc = spawn(file, withPico8Home(args), env, {stdin: true});
 
 	// A spawn ENOENT means PICO-8 is absent (a bad PICO8_PATH surfaces the same
 	// way): leave the structured marker the `start` client polls for, then exit.
