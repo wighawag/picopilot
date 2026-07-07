@@ -36,3 +36,15 @@ So BOTH ends are now evidenced:
 - 50-min + progression nudge -> real progression: 10 levels + 3 mechanics + star rating (2088 tokens).
 
 Implication sharpened: the small tier ALREADY behaves (no suppression needed; it stays tiny on its own). The tier skill's job is ASYMMETRIC -- it mainly needs to ADD ambition framing at the LARGER tiers (progression/levels), while the extra-short tier can essentially match today's game-jam behaviour. That simplifies the design: tiers are an ambition LADDER that the generic game-jam sits at the bottom of, not a set of equal-weight variants.
+
+## Mismatch-robustness confirmed (2026-07-07): the clock wins on structure, the framing wins on intent
+
+Ran the adversarial probe: forced the SAME 50-min "LONGER jam, build progression" nudge (which literally says "not a 3-minute sprint") into a 3-MINUTE run, a deliberately mismatched tier. Outcome: ROBUST, and smart. "ORBIT" (92/100, 998 tokens -- between the plain-3min 445 and the plain-50min 1300):
+
+- The agent did NOT blindly obey and try to hand-build 10 levels in 3 minutes (which would have shipped broken). It "kept to one screen and one verb."
+- But it DID honour the framing's INTENT in a budget-appropriate form: 8 waves with a 3-tier hazard-TYPE progression (static -> drifting -> pulse spikes) + speed/density ramp. Real "a game that goes somewhere," delivered as escalating WAVES within one screen rather than hand-built LEVELS.
+- Shipped finished + fair (verify green, no dead state, reaction budget), 92/100. Not rushed, not broken.
+
+So a mismatched over-ambitious framing is SELF-CORRECTING: the agent reconciles "build big progression" + "you have 3 minutes" into "escalating waves" -- the clock wins the STRUCTURAL call (one screen, no levels) while the framing's INTENT (make it deepen) is honoured in a finishable shape.
+
+Design consequence: a WRONG tier is not catastrophic (no broken ship), which LOWERS the stakes on "who picks the tier" -- the agent's own clock-awareness is a safety net. It also suggests the tier framing should express AMBITION/INTENT ("make it go somewhere, scaled to your time") and let the agent choose the FORM (ramp vs waves vs levels vs worlds), rather than prescribing "build N levels" -- prescribing a form is exactly what could break a mismatched run, whereas intent-framing degrades gracefully. This is the same method-not-menu discipline that governs originality.
