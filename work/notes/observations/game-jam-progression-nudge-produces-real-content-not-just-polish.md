@@ -26,4 +26,13 @@ Crucially, progression COMPOSED with the design lenses rather than displacing th
 
 CAPABILITY is there: given a budget-relative "build progression" framing, the agent produces real content, deepens rather than feature-creeps, and keeps the design discipline. So the fix is FRAMING, which is exactly what a skill can carry. This green-lights the user's proposed design: budget/ambition TIERS (extra-short ~3-10min / short ~1h / medium ~24-48h / long-running 48h+), each an AMBITION PROFILE (time band = a hint, not a hard line; the agent still respects the exact clock but frames ambition by tier), with progression scaling up across tiers. A generic jam skill holds the budget-invariant core; the tiers layer the ambition framing, composing with game-design-reference the same shared-reference way. Next: grill that design (tier as separate skill file vs section vs parameter; who picks the tier; where progression-vs-difficulty-curve lives).
 
-One caveat to carry into the grill: this experiment used a 50-min (=~"short" tier) nudge only. The tier framing's value is that the SAME progression push would be WRONG at extra-short (one screen is the win there). We have not yet tested that a 3-10min run with NO progression push still stays appropriately tiny, or that the tier skill correctly SUPPRESSES progression at the small end. That is the other half of the hypothesis.
+## Small-end confirmed (2026-07-07): the agent self-scopes tiny at 3 min with the plain prompt
+
+Ran the OTHER half: a 3-minute "one button" run with the PLAIN committed prompt (no nudge). Result: "ORBIT FLIP", a tiny one-screen game (445 tokens -- the smallest of every run; 90/100), one mechanic, win-at-20 / lose-at-0. It explicitly chose to stay small ("SLICE: built one screen, one button"; "TRIAGE: kept scope to a single tight loop"), added a difficulty RAMP within the one loop (speed + spawn + bomb ratio scale with score) rather than levels -- the right KIND of progression for the budget -- and still ran the design lenses (no dead state, reaction budget, readability). No levels, no over-scoping.
+
+So BOTH ends are now evidenced:
+- 3-min plain -> tiny, correctly self-scoped (445 tokens).
+- 50-min plain -> short game + heavy polish, UNDER-uses the time (~1300 tokens).
+- 50-min + progression nudge -> real progression: 10 levels + 3 mechanics + star rating (2088 tokens).
+
+Implication sharpened: the small tier ALREADY behaves (no suppression needed; it stays tiny on its own). The tier skill's job is ASYMMETRIC -- it mainly needs to ADD ambition framing at the LARGER tiers (progression/levels), while the extra-short tier can essentially match today's game-jam behaviour. That simplifies the design: tiers are an ambition LADDER that the generic game-jam sits at the bottom of, not a set of equal-weight variants.
