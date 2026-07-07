@@ -71,7 +71,11 @@
 			Games built with picopilot, playable in your browser.
 		{:else}
 			No games in the showcase yet. Export a cart into
-			<code>website/static/games/&lt;slug&gt;/</code> and add it to the list.
+			<code
+				>website/static/games/&lt;theme&gt;/&lt;runtime&gt;/&lt;slug&gt;/</code
+			>
+			with a
+			<code>meta.json</code>.
 		{/if}
 	</p>
 	<a

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import {gameDir, type Game} from './games';
+	import {gameDir, type DiscoveredGame} from './games';
 
 	/**
 	 * Plays a PICO-8 export from `static/games/<slug>/`.
@@ -17,10 +17,10 @@
 	 * fully supports the standalone shape and shows a clear notice for payload-only
 	 * folders. See `static/games/README.md`.
 	 */
-	let {game}: {game: Game} = $props();
+	let {game}: {game: DiscoveredGame} = $props();
 
 	const shape = $derived(game.shape ?? 'standalone');
-	const src = $derived(`${gameDir(game.slug)}/index.html`);
+	const src = $derived(`${gameDir(game)}/index.html`);
 </script>
 
 {#if shape === 'standalone'}

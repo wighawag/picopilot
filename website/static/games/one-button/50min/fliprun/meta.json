@@ -1,0 +1,10 @@
+{
+	"slug": "fliprun",
+	"title": "FLIPRUN",
+	"blurb": "A one-button gravity-flip runner. Flip between floor and ceiling to dodge spikes and grab orbs.",
+	"author": "picopilot game-jam",
+	"theme": "one button",
+	"runtime": "50 min",
+	"shape": "standalone",
+	"hasLabel": true
+}

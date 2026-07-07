@@ -6,9 +6,10 @@
 // bands, the gravity runner, spikes, an orb, the FLIPRUN wordmark) in the game's
 // palette and writes it as a 128x128 PNG that `export --label` bakes in.
 //
-// Run: node showcase/fliprun/make-label.mjs   (writes label.png next to this file)
-// Then: picopilot export showcase/fliprun/main.p8 website/static/games/fliprun/ \
-//         --label showcase/fliprun/label.png
+// Run: node showcase/one-button/50min/fliprun/make-label.mjs   (writes label.png next to this file)
+// Then: picopilot export showcase/one-button/50min/fliprun/main.p8 \
+//         website/static/games/one-button/50min/fliprun/ \
+//         --label showcase/one-button/50min/fliprun/label.png
 
 import {writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';

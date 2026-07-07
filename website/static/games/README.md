@@ -1,35 +1,48 @@
 # Showcase games
 
-Each subfolder here is one showcased PICO-8 game's export, served at
-`/games/<slug>/`. This folder is populated **manually** (there is no CI export
-step: PICO-8 is a paid binary, ADR-0013).
+Each game is a folder `static/games/<theme>/<runtime>/<slug>/` holding its
+PICO-8 export AND a `meta.json`. The showcase page AUTO-DISCOVERS games by
+globbing every `meta.json` (`import.meta.glob('/static/games/**/meta.json')`),
+so there is no hand-maintained list, dropping in a folder is enough. Games are
+grouped on the page by `theme`, then by `runtime` (short to long).
+
+This folder is populated **manually** (there is no CI export step: PICO-8 is a
+paid binary, ADR-0013).
 
 ## Add a game
 
-1. Export a cart into its own folder with the picopilot CLI:
+1. Export a cart into its folder (theme + runtime + slug) with the picopilot CLI:
 
    ```sh
    # standalone (recommended): produces index.html + index.js, played in an iframe
-   picopilot export my-game.p8 ./website/static/games/my-game/
+   picopilot export my-game.p8 ./website/static/games/one-button/3min/my-game/
    ```
 
-   The cart needs a `__label__` for a nice loading splash (capture one with F7 in
-   the PICO-8 sprite editor before exporting).
+   The cart needs a `__label__` for a nice loading splash / card thumbnail
+   (capture one with F7 in the PICO-8 sprite editor before exporting, or draw one
+   and pass `--label`).
 
-2. List it in `../../src/lib/games.ts`:
+2. Write a `meta.json` next to the export:
 
-   ```ts
+   ```json
    {
-   	slug: 'my-game',
-   	title: 'My Game',
-   	blurb: 'One line about it.',
-   	author: 'you',
-   	shape: 'standalone',
-   },
+   	"slug": "my-game",
+   	"title": "My Game",
+   	"blurb": "One line about it.",
+   	"author": "you",
+   	"theme": "one button",
+   	"runtime": "3 min",
+   	"shape": "standalone",
+   	"hasLabel": true
+   }
    ```
 
-3. Commit the exported files under `static/games/my-game/` and the `games.ts`
-   entry. The showcase index and a per-game player page appear automatically.
+3. Commit the folder. The showcase index and a per-game player page appear
+   automatically, no edit to `src/lib/games.ts` (it is now a glob loader, not a
+   list).
+
+`slug` must be unique across the showcase (it is the per-game player route id);
+`theme` and `runtime` are display strings and also the folder names.
 
 ## Standalone vs payload-only
 
