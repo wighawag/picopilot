@@ -1,0 +1,29 @@
+# A budget-relative "build progression" nudge makes the agent produce real content (levels/mechanics), not just polish
+
+Spotted: 2026-07-07, experiment run before designing budget-tier skills.
+
+## The gap this tests
+
+The first three 50-minute "one button" runs (FLIPRUN 92, REVOLVE 90, FLIP 91) all shipped SHORT single-session games (win in ~30s-1min), then spent the back half POLISHING (juice, audio, fairness verification) rather than adding PROGRESSION. FLIPRUN even idled its last ~14 minutes. So the agent used surplus time to make a short game more FINISHED, not a bigger/deeper game. The user's read: 50 min should buy progression (more content, a real difficulty arc, maybe levels), and the right ambition is BUDGET-RELATIVE (3-min != 50-min != 24h) -- a 3-min jam SHOULD stay one-screen; a longer one should reach further.
+
+Standing rule the user set: run the cheap experiment BEFORE building skill structure, to learn whether this is a WORDING gap (agent doesn't reach for progression) or a CAPABILITY gap (can't produce good progression even when told).
+
+## The experiment
+
+A 50-min "one button" run with a single METHOD-LEVEL nudge injected into the prompt (not the committed prompt; a temp variant, restored after). The nudge named the GOAL, not the answer: "scale ambition to the time; once you have a playable slice, spend the BULK of remaining time on PROGRESSION and CONTENT (a game that goes somewhere: escalating stages/levels, new mechanics introduced over the playthrough, a real difficulty arc), NOT only polish; you decide what progression means for your idea." No specific mechanics or level designs were supplied (avoiding the answer-menu trap).
+
+## Result: clear WORDING gap, not a capability gap
+
+The agent produced a genuinely bigger, deeper game ("BEACON HOP", charge-jump platformer, 93/100), and notably at ~2088 tokens vs the ~1300-1400 of the three polish-only runs (~50% more code):
+
+- **10 hand-built levels**, each "introducing a NEW mechanic rather than more of the same."
+- **Three mechanics unlocked over the playthrough** (moving platforms, bounce pads, optional gems) with a documented difficulty arc (1-4 core, 5-6 movers, 7-8 bounce, 9-10 combined + a peak gauntlet).
+- A completion/scoring layer (3-star rating, timer, death count, gems) for replay value.
+
+Crucially, progression COMPOSED with the design lenses rather than displacing them: it still drove every level 1-10 in playtest for fairness ("no dead state by construction"), applied the reaction budget ("no frame-perfect windows; plan on prediction"), and applied the DIFFICULTY-CURVE principle to its own progression -- it caught and softened two mechanic-introduction levels that tested a new mechanic under pressure on first contact ("each new mechanic gets a gentle first contact before it is combined with hazards"). And it chose its OWN progression (levels + 3 mechanics + stars), not a copied menu, so the nudge stayed method-level.
+
+## Implication for the design (tier skills)
+
+CAPABILITY is there: given a budget-relative "build progression" framing, the agent produces real content, deepens rather than feature-creeps, and keeps the design discipline. So the fix is FRAMING, which is exactly what a skill can carry. This green-lights the user's proposed design: budget/ambition TIERS (extra-short ~3-10min / short ~1h / medium ~24-48h / long-running 48h+), each an AMBITION PROFILE (time band = a hint, not a hard line; the agent still respects the exact clock but frames ambition by tier), with progression scaling up across tiers. A generic jam skill holds the budget-invariant core; the tiers layer the ambition framing, composing with game-design-reference the same shared-reference way. Next: grill that design (tier as separate skill file vs section vs parameter; who picks the tier; where progression-vs-difficulty-curve lives).
+
+One caveat to carry into the grill: this experiment used a 50-min (=~"short" tier) nudge only. The tier framing's value is that the SAME progression push would be WRONG at extra-short (one screen is the win there). We have not yet tested that a 3-10min run with NO progression push still stays appropriately tiny, or that the tier skill correctly SUPPRESSES progression at the small end. That is the other half of the hypothesis.
