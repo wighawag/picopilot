@@ -25,99 +25,139 @@
 	];
 </script>
 
-<section class="prose max-w-none prose-invert">
-	<div class="mb-4 flex items-center gap-4">
+<!-- Hero: logo + one-line tagline only. -->
+<section>
+	<div class="flex items-center gap-4">
 		<img
 			src="{base}/logo.svg"
 			alt=""
 			class="h-20 w-20 shrink-0 sm:h-24 sm:w-24"
 		/>
-		<h1 class="!m-0 text-4xl sm:text-5xl">
+		<h1 class="!m-0 text-4xl font-bold sm:text-5xl">
 			<span class="text-neutral-50">pico</span><span class="text-pink-400"
 				>pilot</span
 			>
 		</h1>
 	</div>
-	<p class="lead text-lg text-neutral-300">
-		An agent-first toolchain that makes PICO-8 game development easy with an
-		LLM.
-	</p>
-	<p>
-		picopilot is a single tool that is simultaneously a CLI, an MCP server, and
-		a set of auto-installable agent skills. It is the transpile-and-verify layer
-		between an agent's strength (text) and PICO-8's reality (binary cart
-		sections): it gives the agent eyes (render sprites to a viewable PNG),
-		token-bloat detection, safe cart editing, audio-as-text, and one static
-		acceptance gate, so an LLM can build PICO-8 games and self-correct.
+	<p class="mt-4 text-lg text-neutral-300">
+		An agent-first toolchain that lets an LLM build PICO-8 games. A quick setup
+		and you are playing something your agent made.
 	</p>
 </section>
 
-<section class="mt-10">
-	<h2 class="text-xl font-semibold">Get started</h2>
-	<p class="mt-2 text-neutral-400">
-		picopilot runs with no install via <code>npx</code>. The steps below make
-		your coding agent discover picopilot and scaffold a cart.
+<!-- Get started: the hero action. Big, copyable, try-in-seconds. -->
+<section
+	class="mt-8 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-6 sm:p-8"
+>
+	<h2 class="text-2xl font-bold text-neutral-50">Try it in seconds</h2>
+	<p class="mt-1 text-sm text-neutral-400">
+		Two steps and your agent is building a PICO-8 game:
 	</p>
 
-	<ol class="mt-4 space-y-4">
-		<li>
-			<p class="text-sm font-medium text-neutral-200">
-				1. Install the agent skills (one opt-in write to your shared skill dir)
-			</p>
-			<p class="mt-1 text-sm text-neutral-400">
-				So your agent (Claude Code, pi, etc.) auto-discovers picopilot and knows
-				the cart / art / audio / debug loops.
-			</p>
-			<pre
-				class="mt-2 overflow-x-auto rounded bg-black/40 p-3 text-xs text-neutral-200">npx picopilot skills add</pre>
-		</li>
-		<li>
-			<p class="text-sm font-medium text-neutral-200">
-				2. Ask your agent to build a game, in an empty folder
-			</p>
-			<p class="mt-1 text-sm text-neutral-400">
-				That is it. With the skills installed, the agent scaffolds the cart (<code
-					>picopilot init</code
-				>), writes the Lua, draws the sprites, and keeps <code>verify</code>
-				green on its own. For example, with
-				<a
-					href="https://github.com/wighawag/pi"
-					class="text-emerald-400 hover:underline">pi</a
-				>:
+	<div class="mt-6 space-y-6">
+		<div>
+			<div class="flex items-baseline gap-3">
+				<span
+					class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-black"
+					>1</span
+				>
+				<p class="font-medium text-neutral-100">
+					Install picopilot and its agent skills
+				</p>
+			</div>
+			<p class="mt-1 pl-9 text-sm text-neutral-400">
+				So the <code>picopilot</code> command is on your PATH (the agent calls it
+				many times per iteration), and one opt-in write lets your agent (Claude
+				Code, pi, ...) discover it.
 			</p>
 			<pre
-				class="mt-2 overflow-x-auto rounded bg-black/40 p-3 text-xs text-neutral-200">pi -p "make me a fun PICO-8 game with picopilot"</pre>
-			<p class="mt-2 text-xs text-neutral-500">
-				Any skills-capable coding agent works (Claude Code, pi, ...). Prefer a
-				theme? Try <code>"a one-button game about gravity"</code> and let it run.
-			</p>
-		</li>
-	</ol>
+				class="mt-2 ml-9 overflow-x-auto rounded-lg bg-black/50 px-4 py-3 text-sm text-emerald-300">npm i -g picopilot
+picopilot skills add
 
-	<div class="mt-4 rounded-lg border border-neutral-800 bg-neutral-900/50 p-4">
-		<p class="text-sm font-medium text-neutral-200">Optional dependencies</p>
-		<ul class="mt-2 space-y-1 text-sm text-neutral-400">
-			<li>
-				<code class="text-emerald-400">shrinko</code> powers the token / lint /
-				minify / <code>verify</code> commands:
-				<code>uv pip install shrinko</code>. Without it those commands return a
-				clear <code>shrinko-not-found</code> with this exact remedy; the rest work.
-			</li>
-			<li>
-				<strong>PICO-8</strong> (a paid binary) is only needed to actually run a
-				cart: <code>run</code>, <code>playtest</code>, <code>export</code>, and
-				<code>audio render</code>. Set <code>PICO8_PATH</code> or put
-				<code>pico8</code> on your PATH. Everything else (edit, verify, art, audio
-				authoring) works without it.
-			</li>
-		</ul>
+# optional but recommended: the token / verify gate
+uv pip install shrinko</pre>
+		</div>
+
+		<div>
+			<div class="flex items-baseline gap-3">
+				<span
+					class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-black"
+					>2</span
+				>
+				<p class="font-medium text-neutral-100">
+					Ask your agent to build a game
+				</p>
+			</div>
+			<p class="mt-1 pl-9 text-sm text-neutral-400">
+				In an empty folder. It scaffolds the cart, writes the Lua, draws the
+				sprites, and keeps <code>verify</code> green on its own.
+			</p>
+			<pre
+				class="mt-2 ml-9 overflow-x-auto rounded-lg bg-black/50 px-4 py-3 text-sm text-emerald-300">pi -p "make me a fun PICO-8 game with picopilot"</pre>
+		</div>
 	</div>
 
-	<p class="mt-3 text-xs text-neutral-500">
-		Prefer a global install? <code>npm i -g picopilot</code>, then drop the
-		<code>npx</code> prefix. picopilot is also an MCP server, run
-		<code>npx picopilot</code> to see all commands.
+	<p class="mt-6 text-xs text-neutral-500">
+		Any skills-capable coding agent works. Prefer a theme? Try
+		<code>"a one-button game about gravity"</code> and let it run.
 	</p>
+	<p class="mt-2 text-xs text-neutral-500">
+		Prefer not to install globally? Add <code>picopilot</code> as a project
+		dependency instead; the skills call it bare, so it just needs to resolve on
+		PATH. <code>shrinko</code> is optional: skip it and the build still runs, you
+		only lose the token count and the <code>verify</code> gate (more below).
+	</p>
+</section>
+
+<!-- Deferred prose + optional deps, out of the way of the try-it path. -->
+<section class="mt-10">
+	<details class="group rounded-lg border border-neutral-800 bg-neutral-900/40">
+		<summary
+			class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-neutral-200 select-none marker:content-none"
+		>
+			<span class="text-neutral-500 group-open:hidden">+ </span><span
+				class="hidden text-neutral-500 group-open:inline">− </span
+			>What is picopilot, and what do I need?
+		</summary>
+		<div class="space-y-4 border-t border-neutral-800 px-4 py-4">
+			<p class="text-sm text-neutral-400">
+				picopilot is a single tool that is simultaneously a CLI, an MCP server,
+				and a set of auto-installable agent skills. It is the transpile-and-verify
+				layer between an agent's strength (text) and PICO-8's reality (binary cart
+				sections): it gives the agent eyes (render sprites to a viewable PNG),
+				token-bloat detection, safe cart editing, audio-as-text, and one static
+				acceptance gate, so an LLM can build PICO-8 games and self-correct.
+			</p>
+			<div>
+				<p class="text-sm font-medium text-neutral-200">Optional dependencies</p>
+				<ul class="mt-2 space-y-1 text-sm text-neutral-400">
+					<li>
+						<code class="text-emerald-400">shrinko</code> (optional) powers the
+						token / lint / minify / <code>verify</code> commands. Install with
+						<code>uv pip install shrinko</code> (needs Python 3.8+). Note the PyPI
+						package is <code>shrinko</code> and the module is <code>shrinko8</code>,
+						so install <code>shrinko</code>, not <code>shrinko8</code>. Without it
+						those commands return a clear <code>shrinko-not-found</code> carrying
+						that exact remedy, and <code>verify</code> reports a distinct
+						<code>gate-incapable</code> outcome (never a false green) because it
+						will not skip its token check. Everything not token-related keeps
+						working.
+					</li>
+					<li>
+						<strong>PICO-8</strong> (a paid binary) is only needed to actually run
+						a cart: <code>run</code>, <code>playtest</code>, <code>export</code>,
+						and <code>audio render</code>. Set <code>PICO8_PATH</code> or put
+						<code>pico8</code> on your PATH. Everything else (edit, verify, art,
+						audio authoring) works without it.
+					</li>
+				</ul>
+			</div>
+			<p class="text-xs text-neutral-500">
+				picopilot is also an MCP server, run <code>npx picopilot</code> to see all
+				commands.
+			</p>
+		</div>
+	</details>
 </section>
 
 <section class="mt-10">
