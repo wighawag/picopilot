@@ -99,7 +99,8 @@ const drawSmall = (t, x0, y0, c) => {
 		const g = FONT[ch];
 		if (g)
 			for (let ry = 0; ry < 7; ry++)
-				for (let rx = 0; rx < 5; rx++) if (g[ry][rx] === '#') set(x + rx, y0 + ry, c);
+				for (let rx = 0; rx < 5; rx++)
+					if (g[ry][rx] === '#') set(x + rx, y0 + ry, c);
 		x += 6;
 	}
 };
@@ -114,7 +115,8 @@ const drawBig = (t, cx, y0, c, shadow) => {
 					if (g[ry][rx] === '#') {
 						const bx = x + rx * 2;
 						const by = y0 + ry * 2;
-						if (shadow !== undefined) rectfill(bx + 1, by + 1, bx + 2, by + 2, shadow);
+						if (shadow !== undefined)
+							rectfill(bx + 1, by + 1, bx + 2, by + 2, shadow);
 						rectfill(bx, by, bx + 1, by + 1, c);
 					}
 		x += 12;

@@ -21,6 +21,6 @@ The new `website/` package (added in the website/logo/showcase commits, e1d61f6.
 
 The repo-root acceptance gate (`pnpm format:check && pnpm build && pnpm test`) cannot go green as-is: format:check errors out for a dependency-resolution reason, independent of any file's actual formatting. `pnpm build` and `pnpm test` are unaffected (467 tests pass). Individual files check fine via `npx prettier --check <file>` (the plugin is only needed for `.svelte` files).
 
-## Likely fix (not applied here — flagging, not papering over)
+## RESOLVED (2026-07-07)
 
-A root `pnpm install` to hoist/link `prettier-plugin-svelte` into root `node_modules`, or move the plugin to a root devDependency, or scope the svelte prettier plugin config to the website workspace so the root run does not require it. Needs a decision by whoever owns the website package + the root format config; not fixed in the skills change that surfaced it (that change's own files are prettier-clean, verified per-file).
+Fixed by scoping, matching the repo's own pattern that root package operations exclude the website workspace (`build`/`test`/`dev` all `--filter './packages/*'`; website has its own `website:*` scripts and its own `format`/`format:check`). Added `website/` to root `.prettierignore` so root `prettier --check .` no longer descends into `website/` and picks up its svelte-plugin config. The website formats itself via its own `format` script where the plugins resolve. Also fixed a genuine style issue in `showcase/fliprun/make-label.mjs` (a plain `.mjs`, no plugin needed) that the same run surfaced. Root gate now green: `format:check` + `build` + 467 tests all pass.

@@ -2,6 +2,13 @@
 dist/
 node_modules/
 
+# The website workspace formats itself via its own `format` script, where its
+# prettier plugins (svelte, tailwindcss) resolve. Root `prettier` has no such
+# plugins, so descending into website/ (and picking up website/.prettierrc)
+# errors on the svelte parser. Root format operations already exclude website
+# (build/test/dev filter to packages/*); keep format consistent with that.
+website/
+
 *.yaml
 *.md
 *.json
