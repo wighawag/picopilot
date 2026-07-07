@@ -164,7 +164,7 @@ export function registerServe(
 ): void {
 	cli.command('serve', {
 		description:
-			'Export a cart and serve it locally so you can play it in a browser. Requires PICO-8.',
+			'Export a cart and serve it locally so a HUMAN can play it in a browser (for SHARING a playable build). Requires PICO-8, and a cart __label__. To verify your OWN build works, use `picopilot run` (screenshots) or `picopilot playtest` instead: serve is not the self-verification path.',
 		args: z.object({
 			cart: z
 				.string()
@@ -250,8 +250,8 @@ export function registerServe(
 				return error({
 					code: 'export-failed',
 					message: result.value.labelWarning
-						? 'PICO-8 produced no bundle (the cart has no __label__). Capture a label first, then re-serve.'
-						: 'PICO-8 produced no export bundle. Check the cart runs without a boot error.',
+						? 'PICO-8 produced no bundle: this cart has no __label__ (the export splash), which the browser export needs. To just SEE your own build work, use `picopilot run` or `picopilot playtest` (no label needed) instead of serve. If you genuinely want a browser build to SHARE, bake a label first with `picopilot export --label <128x128.png>` (do NOT hand-edit main.p8), then re-serve.'
+						: 'PICO-8 produced no export bundle. Check the cart runs without a boot error (via `picopilot run`).',
 					exitCode: 1,
 				});
 			}

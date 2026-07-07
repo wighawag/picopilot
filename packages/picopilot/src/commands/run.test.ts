@@ -123,7 +123,7 @@ describe('picopilot run: structured run report', () => {
 		expect(Array.isArray(out.screenshots)).toBe(true);
 	});
 
-	it('a backstop timeout CTAs toward the static gate (verify/tokens)', async () => {
+	it('a timeout with NO screenshots CTAs toward SEEING it (probe/playtest), not just static checks', async () => {
 		const {stdout, exitCode} = await runRun(() =>
 			stubAdapter(ranWith('timeout')),
 		);
@@ -131,8 +131,34 @@ describe('picopilot run: structured run report', () => {
 		expect(exitCode).toBe(0);
 		const out = JSON.parse(stdout);
 		expect(out.exitReason).toBe('timeout');
-		// The CTA points at the static checks to catch a code fault before re-running.
-		expect(stdout.toLowerCase()).toContain('verify');
+		const lower = stdout.toLowerCase();
+		// The weak-model trap is shipping an untested cart on a bare timeout. With no
+		// screenshot captured, the CTA must push toward actually SEEING the cart
+		// (a probe screenshot or playtest) as well as the static checks.
+		expect(lower).toContain('does not prove it works');
+		expect(lower).toContain('playtest');
+		expect(lower).toContain('verify');
+	});
+
+	it('a timeout WITH a screenshot is treated as expected-for-an-interactive-game', async () => {
+		const withShot: Pico8Result = {
+			ok: true,
+			value: {
+				screenshots: ['/tmp/probe_0.png'],
+				printh: 'hello from cart\n',
+				exitReason: 'timeout',
+			},
+		};
+		const {stdout, exitCode} = await runRun(() => stubAdapter(withShot));
+		expect(exitCode).toBe(0);
+		const out = JSON.parse(stdout);
+		expect(out.exitReason).toBe('timeout');
+		expect(out.screenshots).toContain('/tmp/probe_0.png');
+		const lower = stdout.toLowerCase();
+		// A captured frame means the cart rendered: a timeout here is the normal
+		// interactive-game case, so the CTA does NOT claim it is unproven.
+		expect(lower).toContain('expected for an interactive game');
+		expect(lower).not.toContain('does not prove it works');
 	});
 });
 

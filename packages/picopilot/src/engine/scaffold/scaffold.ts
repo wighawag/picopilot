@@ -104,6 +104,48 @@ curated from PICO-8's manual for the things models get wrong without a reminder.
 
 A cart with none of these is inert. Keep them defined.
 
+## The build loop (do this every iteration, and to finish)
+
+One change = one pass through this loop. Do NOT skip the last step:
+
+1. Edit \`main.lua\` (or a cart section via a picopilot command).
+2. \`picopilot tokens\` to watch the 8192-token budget.
+3. \`picopilot verify\` (the static gate: tokens + integrity). GREEN means
+   well-formed, it does NOT mean the cart runs or plays.
+4. **SEE it run.** Add a temporary probe to \`main.lua\` and \`picopilot run\`, then
+   LOOK at the screenshot PNG. Remove the probe after. Or use
+   \`picopilot playtest run\` to drive input and screenshot live gameplay with no
+   cart edit. Probe recipe:
+
+   \`\`\`lua
+   -- TEMPORARY: screenshot a couple of frames, then signal done so run exits.
+   if t==20 then extcmd("set_filename","probe_0") extcmd("screen") end
+   if t==40 then extcmd("set_filename","probe_1") extcmd("screen") end
+   if t==45 then printh("__PICOPILOT_DONE__") end
+   \`\`\`
+
+**Definition of done: you have looked at a screenshot of the running cart and it
+renders what you intended.** A green \`verify\` is NOT done. A \`picopilot run\`
+that ends in \`exitReason: timeout\` with NO screenshot is NOT proof it works, it
+just means the cart never self-quit; you still have not seen it. Never declare a
+game finished on static checks or a bare timeout alone.
+
+## Handing the finished cart to the user
+
+When it is verified and looks right, tell the user to play it with:
+
+\`\`\`sh
+pico8 -run /absolute/path/to/main.p8
+\`\`\`
+
+(or \`picopilot run\` for a headless screenshot pass). Do NOT reach for
+\`picopilot serve\` to prove your own build: that exports + serves a browser build
+for SHARING a playable cart with a human, needs a cart \`__label__\`, and puts a
+human-in-the-loop where none is needed. Verify with \`run\`/\`playtest\`; serve only
+if the user explicitly wants a browser build. And do NOT emit extra deliverables
+(summary docs, play-guides, shell scripts, ASCII banners): the deliverable is the
+verified cart itself.
+
 ## The fixed 16-colour palette (index → RGB)
 
 In a char grid, \`.\` = transparent and \`0-F\` = these indices.

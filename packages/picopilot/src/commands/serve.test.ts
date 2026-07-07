@@ -196,14 +196,23 @@ describe('picopilot serve: failure paths', () => {
 	it('errors when the export produced no bundle, and removes the temp dir immediately', async () => {
 		const serveSeen: {rootDir?: string} = {};
 		const exportSeen: {options?: ExportOptions} = {};
-		const {exitCode} = await runServe(
+		const {stdout, exitCode} = await runServe(
 			() => stubAdapter('writes-no-js', exportSeen),
 			fakeServer(serveSeen),
+			['serve', cartPath, '--json'],
 		);
 		expect(exitCode).not.toBe(0);
 		expect(serveSeen.rootDir).toBeUndefined();
 		// The temp dir created before the failed export is cleaned up on the spot.
 		expect(existsSync(exportSeen.options!.outDir)).toBe(false);
+		// The labelless message redirects to the self-verify tools (run/playtest)
+		// and points at the real label remedy, NOT hand-editing main.p8: this is the
+		// exact loop weak models fell into.
+		const lower = stdout.toLowerCase();
+		expect(lower).toContain('picopilot run');
+		expect(lower).toContain('playtest');
+		expect(lower).toContain('export --label');
+		expect(lower).toContain('do not hand-edit main.p8');
 	});
 
 	it('errors with a nonzero exit when the cart path does not exist', async () => {

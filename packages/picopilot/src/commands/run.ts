@@ -222,25 +222,51 @@ export function registerRun(
 			}
 
 			// A backstop timeout is a soft warning: the cart never signalled done, so
-			// it may have hung or errored. CTA the agent toward the static checks
-			// (lint/tokens) to catch a code fault before re-running.
+			// it may have hung or errored. What to do next depends on whether we SAW
+			// anything: with no screenshots, a timeout is unproven (the weak-model trap
+			// is to call a timeout "fine, it's interactive" and ship an untested cart),
+			// so push toward SEEING it (a probe screenshot / playtest) AND the static
+			// checks. With screenshots in hand, a timeout is expected for an
+			// interactive game (it just never self-quit), so only nudge on faults.
 			const cta =
 				exitReason === 'timeout'
-					? {
-							description:
-								'The cart never printed the done-sentinel (backstop fired). Check for a fault:',
-							commands: [
-								{
-									command: 'verify',
-									description:
-										'Run the static gate (tokens + lint + integrity).',
-								},
-								{
-									command: 'tokens',
-									description: 'Confirm the cart is under the token budget.',
-								},
-							],
-						}
+					? screenshots.length === 0
+						? {
+								description:
+									'The cart never printed the done-sentinel and captured NO screenshot: a timeout alone does NOT prove it works. SEE it before calling it done:',
+								commands: [
+									{
+										command: 'run',
+										description:
+											'Add a temporary probe to the cart (extcmd("set_filename",...)+extcmd("screen") on a frame timer, then printh("__PICOPILOT_DONE__")), re-run, and LOOK at the PNG. Remove the probe after.',
+									},
+									{
+										command: 'playtest run',
+										description:
+											'Drive the cart with input and screenshot live gameplay (no cart edit needed).',
+									},
+									{
+										command: 'verify',
+										description:
+											'Run the static gate (tokens + lint + integrity) to catch a code fault.',
+									},
+								],
+							}
+						: {
+								description:
+									'The cart never printed the done-sentinel (backstop fired) but a screenshot WAS captured: expected for an interactive game that never self-quits. If the frame looks wrong, check for a fault:',
+								commands: [
+									{
+										command: 'verify',
+										description:
+											'Run the static gate (tokens + lint + integrity).',
+									},
+									{
+										command: 'tokens',
+										description: 'Confirm the cart is under the token budget.',
+									},
+								],
+							}
 					: undefined;
 
 			return ok(

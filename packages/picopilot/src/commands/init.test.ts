@@ -114,6 +114,28 @@ describe('picopilot init: AGENTS.md carries the curated PICO-8 reference', () =>
 		expect(agents).toContain('_draw()');
 	});
 
+	it('carries the build loop with a MANDATORY see-it-run step (not just static verify)', () => {
+		// The loop names verify AND run/playtest, and is explicit that a green
+		// static gate is not "done": the weak-model failure was shipping on verify.
+		expect(agents).toContain('picopilot verify');
+		expect(agents).toContain('picopilot run');
+		expect(agents).toContain('picopilot playtest run');
+		expect(agents.toLowerCase()).toContain('definition of done');
+		// It hands the model the concrete probe recipe so "see it" is actionable.
+		expect(agents).toContain('extcmd("screen")');
+		expect(agents).toContain('__PICOPILOT_DONE__');
+		// A bare timeout is explicitly NOT proof it works.
+		expect(agents.toLowerCase()).toContain('timeout');
+	});
+
+	it('hands the finished cart off via `pico8 -run`, NOT `serve`', () => {
+		// The user runs the cart with pico8 -run; serve is not the self-verify path.
+		expect(agents).toContain('pico8 -run');
+		// serve is called out as sharing-only (browser build), not proof-of-build.
+		expect(agents).toContain('picopilot serve');
+		expect(agents.toLowerCase()).toContain('do not emit extra deliverables');
+	});
+
 	it('carries the fixed 16-colour palette with real RGB values', () => {
 		// A palette entry the gfx render encoder depends on (red = 255,0,77).
 		expect(agents).toMatch(/red/);
