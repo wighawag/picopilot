@@ -49,6 +49,19 @@ run. A green verify is well-formed, not proven-to-run, so it points you at
 `picopilot run`. With shrinko absent, verify is `gate-incapable` (never green),
 because it cannot check token bloat, the failure this loop exists to catch.
 
+## Do NOT guess the API: read `reference/pico8-api.md`
+
+The most expensive weak-model mistake is calling a function that does not exist
+(`rand`, `ranf`, `rectcol`, a `spr` with too many args) and only finding out when
+a playtest round crashes with `attempt to call nil value`. When you are unsure a
+function exists or what its arguments are, READ `reference/pico8-api.md` before
+writing the call: it lists the exact names + signatures of the common API and a
+table of the wrong names LLMs reach for (from mainstream Lua / other engines) and
+their real PICO-8 equivalents. Random is `rnd(x)` (a float in `[0,x)`), not
+`rand`/`ranf`; there is NO built-in collision (write an AABB); `spr` is
+`spr(n,x,y,[w,h],[fx],[fy])` with no color/rotate arg. Checking the reference is
+far cheaper than burning a run on a nil-call crash.
+
 ## PICO-8 gotchas that break carts silently
 
 These are NOT token issues; they are behaviours that differ from mainstream Lua
@@ -94,4 +107,5 @@ from this skill's `reference/` folder (see `reference/README.md` for the index):
 - `reference/rpg-menus-dialog.md`: UI state stack, cursor menus, timed text reveal.
 
 Each carries a minimal idiomatic implementation and a genre-pitfalls checklist.
-Adapt them to your game.
+Adapt them to your game. `reference/pico8-api.md` (the exact API surface) sits in
+the same folder for when you need to look a function up.

@@ -137,6 +137,22 @@ describe('picopilot init: AGENTS.md carries the curated PICO-8 reference', () =>
 		expect(lower).toContain('enumerate');
 		expect(lower).toMatch(/your (specific )?game/);
 		expect(lower).toContain('do not check a fixed checklist');
+		// Two named checks: distinct-outcome correctness (sign of the effect) and
+		// is-it-a-game / can-the-player-lose (the too-easy check), both generic.
+		expect(lower).toContain('distinct');
+		expect(lower).toMatch(/sign|direction/);
+		expect(lower).toMatch(/can the player lose|player.*(lose|fail)/);
+		expect(lower).toContain('too easy');
+	});
+
+	it('warns against guessing the API and points at the shipped pico8-api reference', () => {
+		const lower = agents.toLowerCase();
+		expect(lower).toContain('do not guess');
+		expect(agents).toContain('reference/pico8-api.md');
+		// Names the exact traps from the observed run: rnd-not-rand, no collision.
+		expect(agents).toContain('rnd(x)');
+		expect(agents).toContain('rand');
+		expect(agents.toLowerCase()).toContain('no built-in collision');
 	});
 
 	it('hands the finished cart off via `pico8 -run`, NOT `serve`', () => {

@@ -21,6 +21,11 @@ function readSkill(name: string): string {
 	return readFileSync(join(skillsSourceDir(), name, 'SKILL.md'), 'utf8');
 }
 
+/** Reads a skill RESOURCE file (a non-SKILL.md sibling, e.g. a reference doc). */
+function readRef(skill: string, rel: string): string {
+	return readFileSync(join(skillsSourceDir(), skill, rel), 'utf8');
+}
+
 describe('picopilot skills: generation output (the authored discipline skills)', () => {
 	it('ships exactly the named authored skills, each with valid frontmatter', () => {
 		expect([...SKILL_NAMES].sort()).toEqual(
@@ -128,6 +133,22 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 		expect(md).toContain('picopilot minify');
 		// A PICO-8 shorthand the skill teaches for reclaiming budget.
 		expect(md).toContain('+=');
+	});
+
+	it('picopilot-code POINTS AT the pico8-api reference (do-not-guess), and the reference names the traps', () => {
+		const md = readSkill('picopilot-code');
+		// The SKILL.md pointer: an on-demand "do not guess, read the API" pointer.
+		expect(md).toContain('reference/pico8-api.md');
+		expect(md.toLowerCase()).toMatch(/do not guess|don't guess/);
+		// The reference resource itself: exact signatures + the wrong-name table that
+		// covers the exact mistakes a weak model made (rnd-not-rand, no collision,
+		// spr arg count).
+		const api = readRef('picopilot-code', 'reference/pico8-api.md');
+		expect(api).toContain('rnd(x)');
+		expect(api).toContain('rand');
+		expect(api).toContain('rectcol');
+		expect(api).toContain('spr(n,x,y,[w,h]');
+		expect(api.toLowerCase()).toContain('do not exist');
 	});
 
 	it('picopilot-art carries the render→look→set→render loop AND the non-multimodal fallback', () => {
@@ -314,6 +335,7 @@ describe('picopilot skills: isolated --install-skills (the load-bearing shared-w
 		expect(existsSync(join(codeSkill, 'SKILL.md'))).toBe(true);
 		for (const res of [
 			'reference/README.md',
+			'reference/pico8-api.md',
 			'reference/platformer.md',
 			'reference/puzzle-grid.md',
 			'reference/twin-stick-arcade.md',

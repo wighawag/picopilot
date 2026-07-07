@@ -7,7 +7,13 @@ implementations written in idiomatic, token-cheap PICO-8 Lua (see the
 `picopilot-code` SKILL for the token discipline they follow). They teach the
 STRUCTURE and the genre-specific pitfalls; adapt them to your game.
 
-Load the ONE that matches your game:
+First, whenever you are unsure a PICO-8 function exists or what its arguments
+are, read the API surface (do NOT guess a name like `rand`/`rectcol`):
+
+- `pico8-api.md`: EXACT names + signatures for the whole common API, plus a
+  table of wrong names that do NOT exist in PICO-8 and their real equivalents.
+
+Then load the ONE genre file that matches your game:
 
 - `platformer.md`: side-view gravity/jump, per-axis tile collision, camera
   follow.

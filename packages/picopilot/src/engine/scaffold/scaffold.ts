@@ -133,8 +133,25 @@ should). So do NOT check a fixed checklist: enumerate the state transitions YOUR
 specific game defines (whatever its own actions, events, and restart do), then
 drive each one and confirm the before/after state is what you intended, before
 AND after a full round or restart. If reading state off the screen is hard, add
-a temporary \`printh\` to dump the values and confirm them directly. A green
-\`verify\`, a bare \`timeout\`, or a nice-looking title is NOT done.
+a temporary \`printh\` to dump the values and confirm them directly.
+
+Two checks that catch the bugs models ship most:
+
+- **Every DISTINCT outcome, in the right direction.** When the game has more than
+  one kind of interaction (different objects, hazards, or actions), drive EACH
+  kind separately and confirm its effect has the intended SIGN, a reward raises
+  what it should, a penalty lowers what it should. Do not verify one happy path
+  and assume the rest; the classic bug is two different interactions wired to the
+  same or opposite-signed effect (a hazard that adds score instead of costing a
+  life).
+- **Is it actually a GAME (can the player lose)?** After driving it, run the
+  design self-checks against what you SAW, not just the design on paper: can the
+  player genuinely fail (is there real pressure, or did you never come close to
+  losing, meaning it is too easy)? does it escalate? is it fair (no unavoidable
+  loss)? If you drove a full round and nothing threatened you, tune it before
+  calling it done. (The \`game-design-reference\` skill carries these self-checks.)
+
+A green \`verify\`, a bare \`timeout\`, or a nice-looking title is NOT done.
 
 ## Handing the finished cart to the user
 
@@ -215,6 +232,17 @@ in \`picopilot.json\`), so you never silently destroy map data you cannot see.
 - **Memory:** \`peek\`, \`poke\`, \`memcpy\`, \`memset\`, \`cstore\`, \`reload\`.
 - **Cart data:** \`cartdata(id)\`, \`dget(i)\`, \`dset(i,v)\`.
 - **Debug:** \`printh(str)\` (to host stdout, \`picopilot run\` captures it), \`stat(n)\`.
+
+**Do NOT guess an API name.** If a function is not in this list and you are not
+SURE it exists, look it up before writing the call, do not invent one. The
+common crashes: random is \`rnd(x)\` (a float in \`[0,x)\`; integer \`flr(rnd(n))\`),
+NOT \`rand\`/\`ranf\`/\`random\`; there is NO built-in collision (write an AABB
+overlap yourself); \`spr\` is \`spr(n,x,y,[w,h],[fx],[fy])\` with NO color/rotate
+arg; persistence is \`cartdata\`+\`dset\`/\`dget\`, not \`poke4\`; bare \`flr\`/\`abs\`/\`min\`
+(no \`math.\`); \`add\`/\`del\`/\`deli\` (no \`table.insert\`). The \`picopilot-code\` skill
+ships a full \`reference/pico8-api.md\` (exact signatures + a wrong-name table);
+read it when unsure. A nil-call crash costs a whole playtest round; the lookup
+does not.
 
 ## Gotchas that silently break carts (these differ from normal Lua/math)
 
