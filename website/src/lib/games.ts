@@ -25,7 +25,8 @@ export interface Game {
 	readonly theme: string;
 	/**
 	 * The RUN-TIME budget it was built in (display string, e.g. "3 min",
-	 * "50 min"). The showcase groups by this second, ordered short to long.
+	 * "50 min"). The showcase groups by this second, ordered LONGEST first
+	 * (the more substantial games lead).
 	 */
 	readonly runtime: string;
 	/**
@@ -73,11 +74,11 @@ function discover(): DiscoveredGame[] {
 		if (!meta || !meta.slug || !meta.title) continue;
 		out.push({...meta, dir});
 	}
-	// Stable order: theme, then runtime (short to long by parsed minutes), then title.
+	// Stable order: theme, then runtime (LONGEST first by parsed minutes), then title.
 	return out.sort(
 		(a, b) =>
 			a.theme.localeCompare(b.theme) ||
-			runtimeMinutes(a.runtime) - runtimeMinutes(b.runtime) ||
+			runtimeMinutes(b.runtime) - runtimeMinutes(a.runtime) ||
 			a.title.localeCompare(b.title),
 	);
 }
@@ -124,7 +125,7 @@ export function groupedGames(): readonly ThemeGroup[] {
 	for (const [theme, runtimes] of byTheme) {
 		const rgs: RuntimeGroup[] = [];
 		for (const [runtime, gs] of runtimes) rgs.push({runtime, games: gs});
-		rgs.sort((a, b) => runtimeMinutes(a.runtime) - runtimeMinutes(b.runtime));
+		rgs.sort((a, b) => runtimeMinutes(b.runtime) - runtimeMinutes(a.runtime));
 		themes.push({theme, runtimes: rgs});
 	}
 	themes.sort((a, b) => a.theme.localeCompare(b.theme));
