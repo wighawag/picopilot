@@ -9,8 +9,11 @@ dist/
 *.tsbuildinfo
 coverage/
 
-# PICO-8 runtime junk it drops in the cwd when run/exported from the repo root.
+# PICO-8 runtime junk it drops in the cwd when run/exported without -home
+# (see work/notes/observations/pico8-appimage-writes-config-into-cwd.md).
 /log.txt
+/activity_log.txt
+/config.txt
 /sdl_controllers.txt
 /_label.png
 /backup/
