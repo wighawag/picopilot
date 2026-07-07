@@ -53,6 +53,76 @@
 </section>
 
 <section class="mt-10">
+	<h2 class="text-xl font-semibold">Get started</h2>
+	<p class="mt-2 text-neutral-400">
+		picopilot runs with no install via <code>npx</code>. The steps below make
+		your coding agent discover picopilot and scaffold a cart.
+	</p>
+
+	<ol class="mt-4 space-y-4">
+		<li>
+			<p class="text-sm font-medium text-neutral-200">
+				1. Install the agent skills (one opt-in write to your shared skill dir)
+			</p>
+			<p class="mt-1 text-sm text-neutral-400">
+				So your agent (Claude Code, pi, etc.) auto-discovers picopilot and knows
+				the cart / art / audio / debug loops.
+			</p>
+			<pre
+				class="mt-2 overflow-x-auto rounded bg-black/40 p-3 text-xs text-neutral-200">npx picopilot skills add</pre>
+		</li>
+		<li>
+			<p class="text-sm font-medium text-neutral-200">
+				2. Scaffold a cart in an empty folder
+			</p>
+			<p class="mt-1 text-sm text-neutral-400">
+				Creates <code>main.p8</code> + <code>main.lua</code> (you edit the Lua),
+				an <code>AGENTS.md</code> PICO-8 reference, and a
+				<code>picopilot.json</code> config.
+			</p>
+			<pre
+				class="mt-2 overflow-x-auto rounded bg-black/40 p-3 text-xs text-neutral-200">npx picopilot init</pre>
+		</li>
+		<li>
+			<p class="text-sm font-medium text-neutral-200">
+				3. Build, then gate every change
+			</p>
+			<p class="mt-1 text-sm text-neutral-400">
+				Point your agent at the folder and let it work the loop; keep
+				<code>verify</code> green.
+			</p>
+			<pre
+				class="mt-2 overflow-x-auto rounded bg-black/40 p-3 text-xs text-neutral-200">npx picopilot verify</pre>
+		</li>
+	</ol>
+
+	<div class="mt-4 rounded-lg border border-neutral-800 bg-neutral-900/50 p-4">
+		<p class="text-sm font-medium text-neutral-200">Optional dependencies</p>
+		<ul class="mt-2 space-y-1 text-sm text-neutral-400">
+			<li>
+				<code class="text-emerald-400">shrinko</code> powers the token / lint /
+				minify / <code>verify</code> commands:
+				<code>uv pip install shrinko</code>. Without it those commands return a
+				clear <code>shrinko-not-found</code> with this exact remedy; the rest work.
+			</li>
+			<li>
+				<strong>PICO-8</strong> (a paid binary) is only needed to actually run a
+				cart: <code>run</code>, <code>playtest</code>, <code>export</code>, and
+				<code>audio render</code>. Set <code>PICO8_PATH</code> or put
+				<code>pico8</code> on your PATH. Everything else (edit, verify, art, audio
+				authoring) works without it.
+			</li>
+		</ul>
+	</div>
+
+	<p class="mt-3 text-xs text-neutral-500">
+		Prefer a global install? <code>npm i -g picopilot</code>, then drop the
+		<code>npx</code> prefix. picopilot is also an MCP server, run
+		<code>npx picopilot</code> to see all commands.
+	</p>
+</section>
+
+<section class="mt-10">
 	<h2 class="text-xl font-semibold">What it gives you</h2>
 	<ul class="mt-4 grid gap-3 sm:grid-cols-2">
 		{#each commands as c (c.name)}
