@@ -41,9 +41,18 @@ If you `spr(n)` an entity, sprite n must actually be DRAWN (a non-empty sprite),
 
 The player must be able to READ the game state at a glance and get FEEDBACK for every action: what am I, what is a hazard, what is a goal, did my input register, did I score or get hit. Motion trails, colour contrast, a HUD, particles/shake/sfx on events, these are not polish for its own sake, they are how the player perceives the state they must act on.
 
-## Difficulty curve
+## Difficulty curve and progression
 
-Ramp difficulty by introducing or combining MECHANICS (a new hazard type, a new interaction), not merely by piling more of the same obstacle. More-of-the-same reads as samey and does not deepen; a new wrinkle does. Keep the first contact gentle enough to learn the mechanic before it is tested under pressure.
+A good game GOES SOMEWHERE: it escalates. Ramp difficulty by introducing or combining MECHANICS (a new hazard type, a new interaction) over the playthrough, not merely by piling more of the same obstacle. More-of-the-same reads as samey and does not deepen; a new wrinkle does. Aim for a difficulty ARC with a satisfying peak, not a flat loop. Keep the first contact with each new mechanic gentle enough to learn it before it is tested under pressure.
+
+Progression can take MANY FORMS, a ladder from cheapest to richest:
+
+1. **A difficulty ramp within one loop** (speed / spawn rate / hazard density rises as you play) — the smallest way to "go somewhere".
+2. **Escalating waves / rounds** (new hazard TYPES arrive in later waves, not just more) — deepens one screen without new scenes.
+3. **Discrete levels / stages** (hand-built rooms, each teaching or combining a mechanic) — a real authored arc.
+4. **Worlds / acts** (sustained progression across many levels, new mechanics unlocking) — the top of the ladder.
+
+Each rung "goes somewhere" more than the one below; each also costs more to build and finish. WHICH rung a given game should reach is not universal, it depends on how much you can build and FINISH (a rough over-reach loses to a finished smaller arc). Pick the highest rung you can complete well.
 
 ## Originality: a method, not a menu
 

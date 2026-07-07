@@ -18,8 +18,17 @@ The theme is a seed, not a brief. YOU interpret it into a game. Run `game-design
 Three phases you map onto whatever time budget you are given, not a rigid schedule:
 
 - **SLICE (first third).** Get to a PLAYABLE slice fast. A playable slice = it boots, responds to input (the button actually changes what happens), and has a goal with a win/lose, and `verify` is green. Scope tiny: one screen, one mechanic, one goal. A rough playable game scores; a broken ambitious one scores zero.
-- **DEEPEN (middle).** Improve the game that already works, without breaking it. Add readability/feedback, a difficulty ramp that introduces mechanics (not more-of-the-same), audio, content, juice, gated behind a green `verify` each step. Keep it playable at every checkpoint.
+- **DEEPEN (middle).** Once the slice works, spend the BULK of your remaining time making the game DEEPER (go somewhere), not just more finished. Reach UP the progression ladder (`game-design-reference`: difficulty ramp -> escalating waves -> levels/stages -> worlds) as far as your budget can FINISH. Polish (juice, audio, extra feedback) is worth some time but is NOT the main use of a long budget: a short game buffed to a shine still under-uses the clock. Deepening and polishing both stay gated behind a green `verify`, playable at every checkpoint.
 - **TRIAGE (last stretch).** Stop adding features. Confirm it boots and is playable, finalise the writeup. But "stop adding features" is NOT "stop improving": if you have found a real design DEFECT (below), fixing it beats holding, and beats gold-plating. Do not idle a proven build if it still has a fairness or playability flaw.
+
+## Scale your ambition to the clock
+
+The RIGHT size of game depends on the time you are given, and you know your budget from the brief. Match your ambition to it:
+
+- **Short clock** (minutes): one screen, one mechanic; deepen via a difficulty ramp or a few escalating waves. Levels would over-reach and ship broken. Getting a tight, finished, fair slice IS the win.
+- **Long clock** (an hour-plus, a day, more): a playable slice in the first third is just the beginning. Then reach real progression, hand-built levels, unlocking mechanics, an authored difficulty arc, a bigger, deeper game. Idling a proven short game or only polishing it WASTES the budget; more time should buy more GAME.
+
+Never over-reach past what you can FINISH: a rough, unfinished big game loses to a finished smaller arc. Pick the highest rung of the ladder you can complete well, and let the clock, not a fixed template, decide which rung that is. YOU choose the form (ramp / waves / levels / worlds) that fits your idea and your time.
 
 ## The design calls the clock forces
 

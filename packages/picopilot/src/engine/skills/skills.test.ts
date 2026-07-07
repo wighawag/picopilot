@@ -67,6 +67,13 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 		// mechanics (the answer-menu trap). Assert the caveat that guards it.
 		expect(md.toLowerCase()).toContain('self-check');
 		expect(md.toLowerCase()).toMatch(/no (example |concrete )?mechanic/);
+		// Progression as a universal principle: a game GOES SOMEWHERE, expressed
+		// as a ladder of FORMS (ramp -> waves -> levels -> worlds). The situated
+		// "how far up given the clock" call lives in game-jam, not here.
+		expect(md.toLowerCase()).toContain('progression');
+		expect(md.toLowerCase()).toContain('goes somewhere');
+		expect(md.toLowerCase()).toContain('waves');
+		expect(md.toLowerCase()).toMatch(/worlds/);
 	});
 
 	it('game-jam carries the clock discipline and POINTS AT game-design-reference (does not re-teach it)', () => {
@@ -95,6 +102,12 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 		// else): the dead state and the frame-perfect superhuman level.
 		expect(md.toLowerCase()).toContain('dead state');
 		expect(md).toContain('frame-perfect');
+		// Budget-scaled ambition (grilled: one skill, no per-tier files): scale to
+		// the clock, reach up the progression ladder as far as you can FINISH,
+		// deepen > polish on a long budget. Intent-framed, not a level-count menu.
+		expect(md.toLowerCase()).toContain('scale your ambition');
+		expect(md.toLowerCase()).toContain('progression ladder');
+		expect(md.toLowerCase()).toMatch(/finish/);
 		// It interprets the theme itself (decision B) and ships JAM.md.
 		expect(md).toContain('JAM.md');
 	});
