@@ -143,6 +143,16 @@ describe('picopilot init: AGENTS.md carries the curated PICO-8 reference', () =>
 		expect(lower).toMatch(/sign|direction/);
 		expect(lower).toMatch(/can the player lose|player.*(lose|fail)/);
 		expect(lower).toContain('too easy');
+		// Judge the FRAME, not just confirm it drew: readability/contrast, layout
+		// fairness (spacing), and honest quality. These catch the tree-contrast /
+		// too-tight-gap / weak-graphics issues a large model still shipped.
+		expect(lower).toMatch(/judge the frame|judge the rendered/);
+		expect(lower).toContain('contrast');
+		expect(lower).toMatch(/distinguish/);
+		expect(lower).toMatch(/spaced|spacing|gap/);
+		// Framed as hunting for what is WRONG, and "renders" is not "good".
+		expect(lower).toContain('wrong');
+		expect(agents).toContain('"It renders" is NOT "it is good"');
 	});
 
 	it('warns against guessing the API and points at the shipped pico8-api reference', () => {

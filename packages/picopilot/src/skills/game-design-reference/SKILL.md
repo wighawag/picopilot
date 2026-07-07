@@ -41,6 +41,8 @@ If you `spr(n)` an entity, sprite n must actually be DRAWN (a non-empty sprite),
 
 The player must be able to READ the game state at a glance and get FEEDBACK for every action: what am I, what is a hazard, what is a goal, did my input register, did I score or get hit. Motion trails, colour contrast, a HUD, particles/shake/sfx on events, these are not polish for its own sake, they are how the player perceives the state they must act on.
 
+**The self-check (apply it to the RENDERED FRAME, not just the code).** When you look at a gameplay screenshot, judge it, do not just confirm it drew. Looking for what is WRONG: can you tell EVERY entity apart from the background and from each other at a glance (a hazard the same colour as the scenery is a readability bug, recolour it)? is every hazard telegraphed and spaced so a human can react in ~250ms rather than by frame-perfect timing (a gap too tight to pass, or an off-screen hazard, is a fairness defect, not difficulty)? does it look intentional, or merely non-broken? "It renders" is not "it is readable and fair". Apply these lenses to the actual image and fix what fails before calling the game done.
+
 ## Difficulty curve and progression
 
 A good game GOES SOMEWHERE: it escalates. Ramp difficulty by introducing or combining MECHANICS (a new hazard type, a new interaction) over the playthrough, not merely by piling more of the same obstacle. More-of-the-same reads as samey and does not deepen; a new wrinkle does. Aim for a difficulty ARC with a satisfying peak, not a flat loop. Keep the first contact with each new mechanic gentle enough to learn it before it is tested under pressure.

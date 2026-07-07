@@ -150,6 +150,21 @@ Two checks that catch the bugs models ship most:
   losing, meaning it is too easy)? does it escalate? is it fair (no unavoidable
   loss)? If you drove a full round and nothing threatened you, tune it before
   calling it done. (The \`game-design-reference\` skill carries these self-checks.)
+- **JUDGE the frame, do not just confirm it drew.** When you look at a gameplay
+  screenshot, actively hunt for what is WRONG, do not narrate that it rendered.
+  "It renders" is NOT "it is good". Ask concretely:
+  - **Readability / contrast:** can you tell EVERY entity apart, from the
+    background AND from each other, at a glance? If a hazard or pickup blends
+    into the scenery (same or near colour), that is a bug, recolour it. Every
+    thing the player must react to has to be instantly distinguishable.
+  - **Layout fairness:** are hazards spaced and placed so a HUMAN can actually
+    clear them (react in ~250ms, not frame-perfect)? Gaps too tight to pass, or
+    an obstacle you cannot see coming, are fairness defects, not difficulty.
+  - **Honest quality:** does it look intentional, or just non-broken? If a
+    player saw this, would the visuals read as deliberate?
+  These are the \`game-design-reference\` readability + fairness lenses applied to
+  the IMAGE you are looking at, not only to the logic. Apply them to the actual
+  frame; fix what fails before calling it done.
 
 A green \`verify\`, a bare \`timeout\`, or a nice-looking title is NOT done.
 

@@ -68,6 +68,12 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 		expect(md).toContain('frame-perfect');
 		// Visibility (draw what you spr()).
 		expect(md).toContain('spr(');
+		// Readability judged on the RENDERED FRAME, not just the code: the
+		// contrast/spacing lens a large model skipped (it confirmed "renders" but
+		// never asked if entities were distinguishable or gaps clearable).
+		expect(md.toLowerCase()).toContain('rendered frame');
+		expect(md.toLowerCase()).toContain('contrast');
+		expect(md.toLowerCase()).toMatch(/distinguish|tell every entity apart/);
 		// Originality is a METHOD with a self-check, and lists NO concrete
 		// mechanics (the answer-menu trap). Assert the caveat that guards it.
 		expect(md.toLowerCase()).toContain('self-check');
