@@ -60,6 +60,17 @@ Before reframing the whole architecture, checked how Matt's shipped skills compo
 
 **Revised implication:** the split's core assumption (autonomous reach-by-pointer) is SOUND on pi after all, IF the pointer follows Matt's discipline (backtick name + explicit resolvable path + imperative load-and-follow). That REVIVES the option we had written off, and the resource-file option is now a SEPARATE, orthogonal choice (about single-source-of-truth + reuse), not a forced fix for a broken mechanism. The re-grill picks among: (A) keep game-design-reference as a skill but FIX the pointer to Matt's shape; (B) demote it to a `references/` resource file inside game-jam (relative-path read, copy-on-publish to other skills via the existing copySkillResources seam); (C) inline into game-jam. All three now WORK; the choice is about reuse + duplication, not capability.
 
+## RESOLVED + VALIDATED IN REAL RUNS (2026-07-07)
+
+Chose option A (grilled): keep game-design-reference a skill, rewrite game-jam's pointer to "FIRST STEP: use the read tool to LOAD AND FOLLOW `../game-design-reference/SKILL.md`" (sibling relative-to-skill-dir path + imperative). Committed with a regression-guard test. B was rejected: it needs a publish step and breaks raw git-source installs (a git consumer gets only what is committed).
+
+Validated across two fresh 50-minute runs:
+
+- **Run WITH the pointer fix (REVOLVE, 90/100):** the agent READ `game-design-reference/SKILL.md` (3rd read, right after firing game-jam), the thing FLIPRUN never did. Applied the reference's SPECIFIC self-checks: two adversarial auto-player audits (reflex bot + panic-dodger) to prove no reachable dead state, and caught + fixed a reaction-budget defect on itself ("~4.7 reactable frames at top speed... the exact trap the design reference warns of").
+- **Disambiguation run (FLIP, 91/100), the honesty closer:** STRIPPED the four concept words (fairness/reaction/visibility/readability) from the prompt, so the ONLY path to the lens is the skill chain. The agent STILL read game-design-reference (2nd read) and STILL applied the lens hard: instrumented `bx`-per-frame, found a near-frame-perfect flip ("~frame 39 of a 40-frame gap... below the ~6-9 frame human reaction floor, unplayable as a reaction"), retuned physics for a ~12-frame margin, and ran the dead-state check, all with ZERO prompt hints.
+
+**Conclusion: the load-bearing path is the SKILL CHAIN, not the prompt.** game-jam's fixed pointer reliably pulls in game-design-reference, whose specific content reaches the agent and changes the build, even when the prompt names none of the concepts. The benchmark now measures the agent + its skills, not bespoke prompt-engineering. This observation's core question ("did the reference BODY reach the agent, or just its concept words?") is answered: the body reaches it, via the skill, provably. The signal is fully discharged.
+
 ## Follow-up (cheap experiments to disambiguate)
 
 - Check whether `pi --skill` AUTO-INJECTS a user-invoked (`disable-model-invocation`) skill's body into context, or only makes it reachable-on-demand. (Determines whether reach-by-pointer is implicit-load or explicit-open.)
