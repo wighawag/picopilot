@@ -73,26 +73,24 @@
 		</li>
 		<li>
 			<p class="text-sm font-medium text-neutral-200">
-				2. Scaffold a cart in an empty folder
+				2. Ask your agent to build a game, in an empty folder
 			</p>
 			<p class="mt-1 text-sm text-neutral-400">
-				Creates <code>main.p8</code> + <code>main.lua</code> (you edit the Lua),
-				an <code>AGENTS.md</code> PICO-8 reference, and a
-				<code>picopilot.json</code> config.
+				That is it. With the skills installed, the agent scaffolds the cart (<code
+					>picopilot init</code
+				>), writes the Lua, draws the sprites, and keeps <code>verify</code>
+				green on its own. For example, with
+				<a
+					href="https://github.com/wighawag/pi"
+					class="text-emerald-400 hover:underline">pi</a
+				>:
 			</p>
 			<pre
-				class="mt-2 overflow-x-auto rounded bg-black/40 p-3 text-xs text-neutral-200">npx picopilot init</pre>
-		</li>
-		<li>
-			<p class="text-sm font-medium text-neutral-200">
-				3. Build, then gate every change
+				class="mt-2 overflow-x-auto rounded bg-black/40 p-3 text-xs text-neutral-200">pi -p "make me a fun PICO-8 game with picopilot"</pre>
+			<p class="mt-2 text-xs text-neutral-500">
+				Any skills-capable coding agent works (Claude Code, pi, ...). Prefer a
+				theme? Try <code>"a one-button game about gravity"</code> and let it run.
 			</p>
-			<p class="mt-1 text-sm text-neutral-400">
-				Point your agent at the folder and let it work the loop; keep
-				<code>verify</code> green.
-			</p>
-			<pre
-				class="mt-2 overflow-x-auto rounded bg-black/40 p-3 text-xs text-neutral-200">npx picopilot verify</pre>
 		</li>
 	</ol>
 
