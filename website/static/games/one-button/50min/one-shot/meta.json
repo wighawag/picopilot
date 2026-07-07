@@ -1,0 +1,10 @@
+{
+	"slug": "one-shot",
+	"title": "ONE SHOT",
+	"blurb": "A metronome-timing meteor defense: a sweep crosses the sky on a fixed beat and the one button fires. Tap for a precise shot, hold for a charged blast, through escalating waves to a boss.",
+	"author": "picopilot game-jam",
+	"theme": "one button",
+	"runtime": "50 min",
+	"shape": "standalone",
+	"hasLabel": true
+}

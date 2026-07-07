@@ -1,0 +1,10 @@
+{
+	"slug": "revolve",
+	"title": "REVOLVE",
+	"blurb": "Reverse your orbit around a sun to grab stars and dodge bombs. The one button flips your spin direction, not your position.",
+	"author": "picopilot game-jam",
+	"theme": "one button",
+	"runtime": "50 min",
+	"shape": "standalone",
+	"hasLabel": true
+}

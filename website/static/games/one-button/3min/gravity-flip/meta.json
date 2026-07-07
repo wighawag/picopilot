@@ -1,0 +1,10 @@
+{
+	"slug": "gravity-flip",
+	"title": "GRAVITY FLIP",
+	"blurb": "A one-button gravity-flip runner. Flip between floor and ceiling to dodge the spikes streaming in, as the speed ramps up.",
+	"author": "picopilot game-jam",
+	"theme": "one button",
+	"runtime": "3 min",
+	"shape": "standalone",
+	"hasLabel": true
+}

@@ -1,0 +1,10 @@
+{
+	"slug": "beacon-hop",
+	"title": "BEACON HOP",
+	"blurb": "A one-button charge-jump platformer. Hold to charge an arc, release to launch, across 10 levels that add moving platforms, bounce pads and gems.",
+	"author": "picopilot game-jam",
+	"theme": "one button",
+	"runtime": "50 min",
+	"shape": "standalone",
+	"hasLabel": true
+}

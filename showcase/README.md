@@ -39,6 +39,16 @@ per-game player page appear automatically, no `games.ts` edit.
 
 ## Featured games
 
-- **one-button / 50min / fliprun** - `FLIPRUN`, a one-button gravity-flip
-  runner built in a ~50-minute PICO-8 game-jam session with picopilot. See its
-  `JAM.md` for the design writeup.
+All from autonomous picopilot game-jam sessions on the theme **one button**,
+grouped by the time budget. Each has a `JAM.md` writeup.
+
+- **one-button / 3min / gravity-flip** - `GRAVITY FLIP`, a floor/ceiling
+  gravity-flip spike-dodger built in ~3 minutes (a tight one-screen slice).
+- **one-button / 50min / fliprun** - `FLIPRUN`, a gravity-flip runner with
+  spikes, orbs and a combo layer.
+- **one-button / 50min / revolve** - `REVOLVE`, reverse your orbit around a sun
+  to grab stars and dodge bombs.
+- **one-button / 50min / one-shot** - `ONE SHOT`, a metronome-timing meteor
+  defense with escalating waves and a boss finale.
+- **one-button / 50min / beacon-hop** - `BEACON HOP`, a charge-jump platformer
+  with 10 levels that unlock moving platforms, bounce pads and gems.
