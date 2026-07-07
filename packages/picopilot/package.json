@@ -1,6 +1,6 @@
 {
   "name": "picopilot",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "An agent-first toolchain for PICO-8 game development, built on the incur CLI framework.",
   "license": "AGPL-3.0-only",
   "repository": {
