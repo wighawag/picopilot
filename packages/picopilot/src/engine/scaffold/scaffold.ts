@@ -112,10 +112,12 @@ One change = one pass through this loop. Do NOT skip the last step:
 2. \`picopilot tokens\` to watch the 8192-token budget.
 3. \`picopilot verify\` (the static gate: tokens + integrity). GREEN means
    well-formed, it does NOT mean the cart runs or plays.
-4. **SEE it run.** Add a temporary probe to \`main.lua\` and \`picopilot run\`, then
-   LOOK at the screenshot PNG. Remove the probe after. Or use
-   \`picopilot playtest run\` to drive input and screenshot live gameplay with no
-   cart edit. Probe recipe:
+4. **SEE it PLAY, not just render.** A single screenshot proves a frame draws; it
+   does NOT prove the game behaves. So DRIVE it and watch it change over time:
+   \`picopilot playtest run\` feeds input and captures live gameplay with no cart
+   edit, or add the temporary \`run\` probe below to grab specific frames. Capture
+   a sequence and compare frames so you can see MOTION and STATE CHANGE, not one
+   still. Probe recipe:
 
    \`\`\`lua
    -- TEMPORARY: screenshot a couple of frames, then signal done so run exits.
@@ -124,11 +126,15 @@ One change = one pass through this loop. Do NOT skip the last step:
    if t==45 then printh("__PICOPILOT_DONE__") end
    \`\`\`
 
-**Definition of done: you have looked at a screenshot of the running cart and it
-renders what you intended.** A green \`verify\` is NOT done. A \`picopilot run\`
-that ends in \`exitReason: timeout\` with NO screenshot is NOT proof it works, it
-just means the cart never self-quit; you still have not seen it. Never declare a
-game finished on static checks or a bare timeout alone.
+**Definition of done: you have driven YOUR game's core loop and confirmed its
+state actually behaves, not just that it renders.** Screenshots hide logic bugs
+(state that should change on an event but does not, or does not reset when it
+should). So do NOT check a fixed checklist: enumerate the state transitions YOUR
+specific game defines (whatever its own actions, events, and restart do), then
+drive each one and confirm the before/after state is what you intended, before
+AND after a full round or restart. If reading state off the screen is hard, add
+a temporary \`printh\` to dump the values and confirm them directly. A green
+\`verify\`, a bare \`timeout\`, or a nice-looking title is NOT done.
 
 ## Handing the finished cart to the user
 

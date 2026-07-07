@@ -126,6 +126,17 @@ describe('picopilot init: AGENTS.md carries the curated PICO-8 reference', () =>
 		expect(agents).toContain('__PICOPILOT_DONE__');
 		// A bare timeout is explicitly NOT proof it works.
 		expect(agents.toLowerCase()).toContain('timeout');
+		// Done means BEHAVIOUR verified, not just a rendered frame: drive the core
+		// loop and confirm state transitions (the bugs a screenshot hides).
+		const lower = agents.toLowerCase();
+		expect(lower).toContain('state');
+		expect(lower).toMatch(/behave|behaviour|behavior/);
+		// GENERIC, not a fixed mechanic checklist: it must tell the agent to
+		// enumerate ITS OWN game's transitions, so it neither assumes mechanics the
+		// game lacks nor checks only a canned list and misses the rest.
+		expect(lower).toContain('enumerate');
+		expect(lower).toMatch(/your (specific )?game/);
+		expect(lower).toContain('do not check a fixed checklist');
 	});
 
 	it('hands the finished cart off via `pico8 -run`, NOT `serve`', () => {
