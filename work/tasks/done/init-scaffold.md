@@ -1,7 +1,7 @@
 ---
 title: picopilot init — scaffold cart + AGENTS.md + picopilot.json, print skills tip
 slug: init-scaffold
-prd: picopilot
+spec: picopilot
 blockedBy: [cart-model-and-p8-io]
 covers: [1, 2]
 ---

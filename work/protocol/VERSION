@@ -1,4 +1,4 @@
-protocol-version: 2026-06-28
+protocol-version: 2026-07-14
 synced-from: skills/setup/protocol/
-synced-at: 2026-07-04T00:00:00+0000
-source-repo: wighawag/dorfl
+synced-at: 2026-07-14T18:22:25.404Z
+source-commit: dorfl prd-to-spec

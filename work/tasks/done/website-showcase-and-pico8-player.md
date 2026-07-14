@@ -18,7 +18,7 @@ A top-level `./website` package (a SvelteKit static site, extracted from `~/dev/
 
 Three surfaces:
 
-1. **Landing page** explaining what picopilot is (pull the framing from `CONTEXT.md` and `work/prds/`): an agent-first PICO-8 toolchain (CLI + MCP + skills).
+1. **Landing page** explaining what picopilot is (pull the framing from `CONTEXT.md` and `work/specs/`): an agent-first PICO-8 toolchain (CLI + MCP + skills).
 2. **Showcase index** listing the exported games found under `website/static/games/<slug>/`, each with a title/thumbnail, that link to a player page.
 3. **`Pico8Player` Svelte component** (lives in the website, NOT the picopilot engine): a port of PICO-8's small HTML-export bootstrap (the `Module` config + `<canvas id="canvas">` + input wiring) that loads an exported cart's runtime `.js`. This is what makes `picopilot export --payload-only` useful: the site provides ONE consistent player shell instead of N iframed standalone pages. See ADR-0013 for the standalone-vs-payload-only split and the fact that the exported `.html` is a disposable shell referencing a self-contained sibling `.js`.
 

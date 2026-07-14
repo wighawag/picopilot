@@ -1,7 +1,7 @@
 ---
 title: ship picopilot-* skills + init --install-skills opt-in (isolation-tested)
 slug: picopilot-skills
-prd: picopilot
+spec: picopilot
 blockedBy: [init-scaffold]
 covers: [2, 20]
 ---

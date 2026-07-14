@@ -1,5 +1,5 @@
 /**
- * The playtest SESSION SUPERVISOR (ADR-0011, prd US #6): the daemon that keeps a
+ * The playtest SESSION SUPERVISOR (ADR-0011, spec US #6): the daemon that keeps a
  * driven PICO-8 process ALIVE + PAUSED across the agent's separate CLI turns, and
  * the client the per-verb sub-invocations use to address it BY ID.
  *

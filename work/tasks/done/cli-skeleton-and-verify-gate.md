@@ -1,7 +1,7 @@
 ---
 title: incur CLI skeleton + build/test/verify gate + .dorfl.json
 slug: cli-skeleton-and-verify-gate
-prd: picopilot
+spec: picopilot
 blockedBy: []
 covers: [16]
 ---

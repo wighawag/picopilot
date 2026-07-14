@@ -1,7 +1,7 @@
 ---
 title: sfx from-mml, picopilot-MML to __sfx__ transpiler (shrinko-free TS codec)
 slug: audio-sfx-from-mml
-prd: picopilot
+spec: picopilot
 blockedBy: []
 covers: [12]
 ---

@@ -1,7 +1,7 @@
 ---
 title: engine/gfx hex↔char-grid codec + gfx show/set with map-overlap smart-refuse
 slug: gfx-grid-codec-show-set
-prd: picopilot
+spec: picopilot
 blockedBy: [cart-model-and-p8-io, init-scaffold]
 covers: [6, 9, 10]
 ---

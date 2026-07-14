@@ -1,5 +1,5 @@
 /**
- * The playtest session DAEMON runtime + CLIENT (ADR-0011, prd US #6). This is the
+ * The playtest session DAEMON runtime + CLIENT (ADR-0011, spec US #6). This is the
  * IO half of the supervisor: the daemon LISTENS on a session's Unix domain socket
  * and drives a live {@link DriveSession} on behalf of each verb sub-invocation;
  * the {@link SessionClient} CONNECTS to that socket to send a verb and read back

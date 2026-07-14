@@ -1,7 +1,7 @@
 ---
 title: music from-patterns, structural pattern list to __music__ (shrinko-free TS codec)
 slug: audio-music-from-patterns
-prd: picopilot
+spec: picopilot
 blockedBy: [audio-sfx-from-mml]
 covers: [12]
 ---

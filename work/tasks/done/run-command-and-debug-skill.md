@@ -1,7 +1,7 @@
 ---
 title: picopilot run (thin sentinel-watch + screenshot collect) + picopilot-debug skill
 slug: run-command-and-debug-skill
-prd: picopilot
+spec: picopilot
 blockedBy: []
 covers: [14]
 ---

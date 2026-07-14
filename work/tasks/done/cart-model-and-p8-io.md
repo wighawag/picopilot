@@ -1,7 +1,7 @@
 ---
 title: .p8 cart read/write model (parse sections, serialize round-trip)
 slug: cart-model-and-p8-io
-prd: picopilot
+spec: picopilot
 blockedBy: [cli-skeleton-and-verify-gate]
 covers: []
 ---

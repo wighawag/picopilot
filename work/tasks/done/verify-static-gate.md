@@ -1,7 +1,7 @@
 ---
 title: picopilot verify — static gate (tokens + integrity), gate-incapable when shrinko absent
 slug: verify-static-gate
-prd: picopilot
+spec: picopilot
 blockedBy: [shrinko-adapter-tokens]
 covers: [15, 18]
 ---

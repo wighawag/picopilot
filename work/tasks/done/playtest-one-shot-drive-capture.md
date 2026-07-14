@@ -1,7 +1,7 @@
 ---
 title: playtest (one-shot), drive an arbitrary cart through a scripted input and capture live gameplay
 slug: playtest-one-shot-drive-capture
-prd: playtest-drive-and-capture
+spec: playtest-drive-and-capture
 blockedBy: []
 covers: [1, 2, 3, 4, 5, 7, 8, 9, 10, 11]
 ---
@@ -10,7 +10,7 @@ covers: [1, 2, 3, 4, 5, 7, 8, 9, 10, 11]
 
 `picopilot playtest <cart> [--input "<script>"] [--seed <n>]`, a new command that DRIVES an arbitrary cart through a scripted button sequence and captures it during ACTUAL gameplay (not the title screen), returning one structured envelope (screenshot paths + captured printh + the steps run). This is the "does it actually PLAY?" rung the run-test loop is missing, and it makes any game an agent builds drivable with NO change to that game's cart.
 
-The whole design is DECIDED + spike-verified in the prd (`work/prds/tasked/playtest-drive-and-capture.md`, Implementation Decisions) and the game-jam prototype (`packages/picopilot/bench/game-jam/drive-capture.sh`). Build the ONE-SHOT slice: the full input/opcode script is known up front, so the driven cart runs the script to completion and exits (no live session). The resumable session is a separate later task on the same machine.
+The whole design is DECIDED + spike-verified in the prd (`work/specs/tasked/playtest-drive-and-capture.md`, Implementation Decisions) and the game-jam prototype (`packages/picopilot/bench/game-jam/drive-capture.sh`). Build the ONE-SHOT slice: the full input/opcode script is known up front, so the driven cart runs the script to completion and exits (no live session). The resumable session is a separate later task on the same machine.
 
 End-to-end vertical (transform seam -> command -> capture -> tests):
 
@@ -43,7 +43,7 @@ End-to-end vertical (transform seam -> command -> capture -> tests):
 > Goal: build `picopilot playtest <cart>` (one-shot), drive an ARBITRARY cart through a scripted input and capture it during LIVE gameplay, so an agent can SEE its game being played. Backed by a tested `engine/pico8` drive-transform. The design is CLOSED and spike-verified; this is "implement the decided recipe", not open design.
 >
 > FIRST read the binding spec + prior art:
-> - `work/prds/tasked/playtest-drive-and-capture.md`, the Implementation Decisions carry the full verified recipe (frame-stepping; the `btn`/`btnp`->`serial(0x804)` transform with btnp-edge reconstruction; the FIXED-SIZE command-block transport + one-per-frame budget drain + the stdout ACK handshake; the opt-in `--seed` determinism; transform-safety/best-effort; generic-input default). Every fact there was verified on PICO-8 v0.2.7.
+> - `work/specs/tasked/playtest-drive-and-capture.md`, the Implementation Decisions carry the full verified recipe (frame-stepping; the `btn`/`btnp`->`serial(0x804)` transform with btnp-edge reconstruction; the FIXED-SIZE command-block transport + one-per-frame budget drain + the stdout ACK handshake; the opt-in `--seed` determinism; transform-safety/best-effort; generic-input default). Every fact there was verified on PICO-8 v0.2.7.
 > - `packages/picopilot/bench/game-jam/drive-capture.sh` + `check-playable.sh`, the working prototype of the transform + capture (the thing you are promoting into a tested command).
 > - `work/notes/findings/pico8-driving-input-into-a-running-cart.md` and `pico8-run-and-screenshot.md`, the serial-input + headless-run + `-desktop` capture ground truth.
 > - `work/notes/observations/game-jam-bench-misses-invisible-player-and-empty-sprites.md`, the spike results to promote into a proper finding.

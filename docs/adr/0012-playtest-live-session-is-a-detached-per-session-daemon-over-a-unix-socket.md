@@ -1,6 +1,6 @@
 # The `playtest` live session is a detached per-session daemon addressed by id over a Unix socket
 
-The RESUMABLE playtest session (ADR-0011's "A" model, prd US #6) is implemented as a DETACHED background daemon, one per session, that owns the live `pico8 -x` process + its stdin/stdout and listens on a per-session Unix domain socket under a controlled temp dir. `playtest start` spawns the daemon and returns a SESSION ID (the socket's dir name); each later verb (`step`/`input`/`shot`/`stop`/`status`) is a SEPARATE CLI invocation that connects to that socket, runs one send-block -> wait-ACK -> return handshake against the daemon, and returns. This is the host-side lifecycle ADR-0011 deferred to the task; the cart-side transform + block+ACK transport are reused UNCHANGED.
+The RESUMABLE playtest session (ADR-0011's "A" model, spec US #6) is implemented as a DETACHED background daemon, one per session, that owns the live `pico8 -x` process + its stdin/stdout and listens on a per-session Unix domain socket under a controlled temp dir. `playtest start` spawns the daemon and returns a SESSION ID (the socket's dir name); each later verb (`step`/`input`/`shot`/`stop`/`status`) is a SEPARATE CLI invocation that connects to that socket, runs one send-block -> wait-ACK -> return handshake against the daemon, and returns. This is the host-side lifecycle ADR-0011 deferred to the task; the cart-side transform + block+ACK transport are reused UNCHANGED.
 
 ## Context
 

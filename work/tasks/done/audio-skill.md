@@ -1,7 +1,7 @@
 ---
 title: picopilot-audio skill, the MML authoring loop + tracker-rows framing
 slug: audio-skill
-prd: picopilot
+spec: picopilot
 blockedBy: [audio-sfx-from-mml, audio-music-from-patterns]
 covers: [20]
 ---

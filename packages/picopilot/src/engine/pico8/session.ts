@@ -1,5 +1,5 @@
 /**
- * The RESUMABLE playtest SESSION handshake core (ADR-0011, prd US #6): the pure,
+ * The RESUMABLE playtest SESSION handshake core (ADR-0011, spec US #6): the pure,
  * CI-testable half of the "A" live model. It keeps a single driven PICO-8 process
  * ALIVE and PAUSED between the agent's turns and drives it one command at a time
  * over the verified transport: write a FIXED-SIZE command block, WAIT for the

@@ -1,7 +1,7 @@
 ---
 title: engine/shrinko shell-out adapter + picopilot tokens (structured shrinko-not-found)
 slug: shrinko-adapter-tokens
-prd: picopilot
+spec: picopilot
 blockedBy: [cart-model-and-p8-io]
 covers: [3, 17]
 ---

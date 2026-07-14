@@ -1,5 +1,5 @@
 /**
- * The detached daemon process ENTRY (ADR-0011, prd US #6). `playtest start`
+ * The detached daemon process ENTRY (ADR-0011, spec US #6). `playtest start`
  * spawns this file (via `process.execPath [+ execArgv] <this> <configJson>`, so
  * it re-uses the exact loader the parent ran under, dev `tsx` or built `dist`) as
  * a DETACHED background process that owns the live driven PICO-8 for the session's

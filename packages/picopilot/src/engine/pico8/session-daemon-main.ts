@@ -1,5 +1,5 @@
 /**
- * The playtest session DAEMON ENTRYPOINT (ADR-0011, prd US #6): the small
+ * The playtest session DAEMON ENTRYPOINT (ADR-0011, spec US #6): the small
  * detached process `playtest start` spawns to OWN a live driven PICO-8 for a
  * session's lifetime. It is invoked via the hidden `playtest __daemon` verb (so it
  * re-uses the exact same executable/loader the parent ran under, dev `tsx` or

@@ -26,7 +26,7 @@ export const SHRINKO_NEEDS = ['python>=3.8'] as const;
 
 /**
  * The structured "shrinko is not installed" failure (ADR-0002). Its shape is
- * fixed by the prd's two-tier contract (US #17): `ok:false`, a machine-readable
+ * fixed by the spec's two-tier contract (US #17): `ok:false`, a machine-readable
  * `reason`, the EXACT `remedy` string, and the `needs` list. A command turns
  * this into an incur `error({ code: reason, ... })` with a nonzero exit.
  */

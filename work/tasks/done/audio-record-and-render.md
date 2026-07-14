@@ -1,7 +1,7 @@
 ---
 title: audio record + render, record a running cart's audio to WAV, and render authored sfx/music over it (PICO-8-gated)
 slug: audio-record-and-render
-prd: picopilot
+spec: picopilot
 blockedBy: [audio-sfx-from-mml]
 covers: [13]
 ---

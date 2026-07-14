@@ -1,7 +1,7 @@
 ---
 title: playtest resumable session, a live, steppable, agent-addressed playtest the agent plays across turns
 slug: playtest-resumable-session
-prd: playtest-drive-and-capture
+spec: playtest-drive-and-capture
 blockedBy: [playtest-one-shot-drive-capture]
 covers: [6]
 ---
@@ -37,7 +37,7 @@ End-to-end vertical (session lifecycle -> command verbs -> capture -> tests):
 
 > Goal: build the RESUMABLE playtest session (prd US #6, the "A" live model): a persistent, steppable, agent-addressed playtest so the agent PLAYS its game across turns (look -> inject -> step -> look). Add the host-side SESSION lifecycle on top of the one-shot task's already-verified cart-side transform + opcode protocol; do NOT re-invent the transform.
 >
-> FIRST read: `work/prds/tasked/playtest-drive-and-capture.md` (the session model A/C decision + the VERIFIED transport: persistent process, fixed-size command blocks, the stdout ACK handshake that makes stepping deterministic and lossless) and the landed `playtest-one-shot-drive-capture` task + its code (the drive-transform + opcode protocol you reuse). Confirm the one-shot task shipped and its transform is structured for reuse; if it drifted, do not build on a stale premise (route to needs-attention).
+> FIRST read: `work/specs/tasked/playtest-drive-and-capture.md` (the session model A/C decision + the VERIFIED transport: persistent process, fixed-size command blocks, the stdout ACK handshake that makes stepping deterministic and lossless) and the landed `playtest-one-shot-drive-capture` task + its code (the drive-transform + opcode protocol you reuse). Confirm the one-shot task shipped and its transform is structured for reuse; if it drifted, do not build on a stale premise (route to needs-attention).
 >
 > Domain: `CONTEXT.md`; the `pico8-not-found` boundary mirrors `run`/`audio render`. The KEY reliability fact (verified, honour it): a persistent `pico8 -x` stdin needs FIXED-SIZE command blocks (small writes coalesce), and the STDOUT ACK HANDSHAKE (host waits for the cart's ack before the next command) is what makes stepping deterministic and lossless, build the session on the handshake, not on wall-clock spacing (that was the prototype's flakiness).
 >

@@ -5,7 +5,7 @@ import type {Pico8Process} from './shell.js';
 
 /**
  * The RESUMABLE session HANDSHAKE core is tested WITHOUT the paid PICO-8 binary
- * (ADR-0011, prd US #6): a FAKE driven process lets us assert the load-bearing
+ * (ADR-0011, spec US #6): a FAKE driven process lets us assert the load-bearing
  * transport contract, each verb WRITES its fixed-size command block and WAITS for
  * the cart's ACK before returning (send -> wait-ack -> return), and the failure
  * paths (a lost/late ack, a process that dies mid-command) surface as STRUCTURED

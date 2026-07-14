@@ -1,7 +1,7 @@
 ---
 title: gfx render — upscaled palette-accurate PNG (shrinko-free TS encoder)
 slug: gfx-render-png
-prd: picopilot
+spec: picopilot
 blockedBy: [gfx-grid-codec-show-set]
 covers: [7, 8]
 ---

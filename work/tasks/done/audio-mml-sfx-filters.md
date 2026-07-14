@@ -1,7 +1,7 @@
 ---
 title: picopilot-MML SFX filters, expose NOIZ/BUZZ/DETUNE/REVERB/DAMPEN so designed sounds (explosion, pad, engine) are reachable
 slug: audio-mml-sfx-filters
-prd: picopilot
+spec: picopilot
 blockedBy: [audio-sfx-from-mml]
 covers: [12]
 ---
