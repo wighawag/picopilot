@@ -9,4 +9,4 @@
 
 ## Consequences
 
-There is a deliberate name collision: `picopilot verify` (this CLI feature, gates the USER's cart) is NOT the runner's own `.dorfl.json` `verify` gate (which gates picopilot's development). Always write `picopilot verify` to disambiguate; the term is pinned in `CONTEXT.md`.
+There is a deliberate name collision: `picopilot verify` (this CLI feature, gates the USER's cart) is NOT the runner's own `dorfl.json` `verify` gate (which gates picopilot's development). Always write `picopilot verify` to disambiguate; the term is pinned in `CONTEXT.md`.

@@ -19,16 +19,16 @@ picopilot is an agent-first toolchain (a single TypeScript CLI built on the `inc
 - **`picopilot serve`** — the "play this cart in a browser" loop (ADR-0014): takes a CART, ALWAYS exports first into a temp dir, then serves it over a zero-dep `node:http` static server and prints the local URL. Distinct from `export` (which produces a bundle at a chosen dest) and `run` (native headless capture). Hard-requires PICO-8.
 - **showcase** — the manually-populated set of exported games under `./website/static/games/<slug>/`, produced by pointing `picopilot export` at each slug dir. No CI export step (PICO-8 is a paid binary); selection is manual.
 - **website** — the top-level `./website` package (a SvelteKit static site, extracted from `template-svelte-tailwind`): the picopilot landing page + a showcase index that plays the exported games. It owns the `Pico8Player` Svelte component (a port of PICO-8's small bootstrap that loads an exported `.js`), NOT the picopilot engine. Deploys as GitHub Pages.
-- **`picopilot verify`** — the tool's STATIC cart-acceptance gate (tokens + lint + integrity; does NOT run the cart). Distinct from the `.dorfl.json` `verify` gate that gates picopilot's OWN development (same word, different level).
+- **`picopilot verify`** — the tool's STATIC cart-acceptance gate (tokens + lint + integrity; does NOT run the cart). Distinct from the `dorfl.json` `verify` gate that gates picopilot's OWN development (same word, different level).
 - **gate-incapable** — a distinct `picopilot verify` outcome (nonzero exit, never green) when shrinko is absent, so the gate can never pass hollowly by skipping its token/lint checks.
-- **promptGuidance** — the per-repo NUDGE namespace in `.dorfl.json` whose members (currently just `testFirst`) strengthen the wording in the worker's in-band prompt. NOT a gate: the `verify` step is still the only acceptance bar. Omitted ⇒ off; absence is the default.
+- **promptGuidance** — the per-repo NUDGE namespace in `dorfl.json` whose members (currently just `testFirst`) strengthen the wording in the worker's in-band prompt. NOT a gate: the `verify` step is still the only acceptance bar. Omitted ⇒ off; absence is the default.
 - **work/ contract** — the on-disk system this repo uses, defined by the reference docs in **`work/protocol/`** (copied here by `setup`): `WORK-CONTRACT.md` (the contract), `CLAIM-PROTOCOL.md`, `REVIEW-PROTOCOL.md`, `task-template.md`, `spec-template.md`, `ADR-FORMAT.md`. Three REGIME umbrellas — `notes/` (capture buckets), `tasks/` (the build board), `specs/` (the spec lifecycle) — plus top-level `questions/` and `protocol/`. One markdown file per item, status = the folder it lives in (never a field). Capture buckets: `notes/ideas/` (proposed), `notes/observations/` (spotted, unverified, append-only), `notes/findings/` (verified external/domain ground truth, each with a `source:`). ADRs (`docs/adr/`, format in `work/protocol/ADR-FORMAT.md`) record what WE decided and why.
 
 ## Conventions
 
 Standing per-change rules agents must follow in this repo.
 
-<!-- No standing per-change rule set yet (no changeset/CHANGELOG/news convention). Add yours here, or delete this section. For enforcement, wire your own check into the `.dorfl.json` `verify` gate. -->
+<!-- No standing per-change rule set yet (no changeset/CHANGELOG/news convention). Add yours here, or delete this section. For enforcement, wire your own check into the `dorfl.json` `verify` gate. -->
 
 ## Skills this repo uses
 
