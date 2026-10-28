@@ -25,6 +25,7 @@ import {
 	createShellShrinkoFactory,
 	type ShrinkoAdapterFactory,
 } from './shrinko-env.js';
+import {mcpConfigOption} from './pico8-env.js';
 
 /** Injects the shrinko adapter `gfx import`/`gfx export` use (the spritesheet round-trip). */
 export type {ShrinkoAdapterFactory} from './shrinko-env.js';
@@ -199,11 +200,13 @@ function buildGfxGroup(shrinkoFactory: ShrinkoAdapterFactory): Cli.Cli {
 				),
 		}),
 		options: z.object({
+			// No zod default: an absent value must stay distinguishable, so that under
+			// `--mcp` (where incur loads no config) picopilot.json still applies.
 			allowMapOverlap: z
 				.boolean()
-				.default(false)
+				.optional()
 				.describe(
-					'Authorise overwriting existing shared-region data when writing sprites 128-255 (ADR-0004). Also settable as allowMapOverlap in picopilot.json.',
+					'Authorise overwriting existing shared-region data when writing sprites 128-255 (ADR-0004). Also settable as allowMapOverlap in picopilot.json. Default false.',
 				),
 		}),
 		output: z.object({
@@ -237,7 +240,7 @@ function buildGfxGroup(shrinkoFactory: ShrinkoAdapterFactory): Cli.Cli {
 				},
 			},
 		],
-		run({args, options, error, ok}) {
+		run({args, options, error, ok, var: vars}) {
 			const cartPath = resolveCart(args.cart);
 
 			// Decode the incoming grid FIRST: a malformed grid is a caller error and
@@ -267,12 +270,12 @@ function buildGfxGroup(shrinkoFactory: ShrinkoAdapterFactory): Cli.Cli {
 			// (the shared-bank bytes at risk), NOT __map__ (ADR-0004). The flag and
 			// the picopilot.json config both feed `options.allowMapOverlap` (incur
 			// resolves argv > config > default), so both authorisation paths converge
-			// here.
-			const decision = decideOverlap(
-				sheet,
-				args.sprite,
-				options.allowMapOverlap,
-			);
+			// here. Under `--mcp` incur loads no config, so the picopilot.json value
+			// comes from the `mcpConfig` var instead.
+			const allowMapOverlap =
+				options.allowMapOverlap ??
+				mcpConfigOption(vars, ['gfx', 'set'], 'allowMapOverlap') === true;
+			const decision = decideOverlap(sheet, args.sprite, allowMapOverlap);
 
 			if (decision.kind === 'refused') {
 				// The silent-corruption guard: REFUSE and DO NOT write. The cart file is

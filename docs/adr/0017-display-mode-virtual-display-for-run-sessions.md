@@ -6,7 +6,7 @@ Every picopilot capability must work on a machine with no display and no sound c
 - `xvfb`: always run a `-run` session on a private virtual X display.
 - `auto` (default): use the virtual display only when there is no display (no `DISPLAY` and no `WAYLAND_DISPLAY`), otherwise behave like `native`.
 
-It is set by the global `--display` flag, the `PICOPILOT_DISPLAY` env var, or the top-level `"display"` key of `picopilot.json`, in that precedence (the order every picopilot setting uses). incur's MCP transport passes no global flags and loads no config file, so under `--mcp` only `PICOPILOT_DISPLAY` (set in the server's environment) applies. An unknown value is an `invalid-display-mode` error for the commands that use the mode (`run`, `audio record`, `audio render`, `doctor`), never a silent fall back to `auto`; other commands ignore it. Only `-run` sessions consult the mode; the `-x` paths never start a display and never pay its startup cost.
+It is set by `--display`, the `PICOPILOT_DISPLAY` env var, or the top-level `"display"` key of `picopilot.json`, in that precedence (the order every picopilot setting uses). `--display` is an option of the commands that use the mode (`run`, `audio record`, `audio render`, `doctor`), so it is also an argument of their MCP tools, and is accepted anywhere on the command line and on `picopilot --mcp` (ADR-0018 explains why it is not an incur global). An unknown value is an `invalid-display-mode` error for the commands that use the mode (`run` only when it records), never a silent fall back to `auto`; other commands ignore it. Only `-run` sessions consult the mode; the `-x` paths never start a display and never pay its startup cost.
 
 ## Considered Options
 

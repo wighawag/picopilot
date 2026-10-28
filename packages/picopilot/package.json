@@ -39,7 +39,7 @@
     "picopilot": "node --import tsx src/bin.ts"
   },
   "dependencies": {
-    "incur": "0.4.10"
+    "incur": "0.7.1"
   },
   "devDependencies": {
     "@types/node": "22.12.0",

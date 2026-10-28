@@ -20,11 +20,12 @@ import {
 import {makeReadInclude} from './cart-includes.js';
 import {
 	createShellAdapterFactory,
-	displayModeOf,
+	DISPLAY_OPTION,
 	displayUnavailableError,
 	PICO8_ENV,
 	type Pico8AdapterFactory,
 	pico8NotFoundError,
+	resolveCommandDisplay,
 } from './pico8-env.js';
 
 /**
@@ -219,6 +220,7 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 				.describe(
 					'Safety backstop: kill PICO-8 after this many ms if it never signals.',
 				),
+			display: DISPLAY_OPTION,
 		}),
 		env: AUDIO_ENV,
 		output: AUDIO_OUTPUT,
@@ -262,8 +264,10 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 			const harnessCart = join(wavDir, 'record-harness.p8');
 			writeFileSync(harnessCart, harness.cartText);
 
+			const display = resolveCommandDisplay(options.display, vars);
+			if (!display.ok) return error(display.error);
 			const adapter = adapterFactory(env as NodeJS.ProcessEnv, {
-				display: displayModeOf(vars),
+				display: display.mode,
 			});
 			const result = await adapter.record({
 				cartPath: harnessCart,
@@ -338,6 +342,7 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 				.describe(
 					'Safety backstop: kill PICO-8 after this many ms if it never signals.',
 				),
+			display: DISPLAY_OPTION,
 		}),
 		env: AUDIO_ENV,
 		output: AUDIO_OUTPUT,
@@ -394,8 +399,10 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 			const harnessCart = join(wavDir, 'render-harness.p8');
 			writeFileSync(harnessCart, harness.cartText);
 
+			const display = resolveCommandDisplay(options.display, vars);
+			if (!display.ok) return error(display.error);
 			const adapter = adapterFactory(env as NodeJS.ProcessEnv, {
-				display: displayModeOf(vars),
+				display: display.mode,
 			});
 			const result = await adapter.record({
 				cartPath: harnessCart,

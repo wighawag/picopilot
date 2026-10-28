@@ -1,6 +1,7 @@
 import {z} from 'incur';
 import {
 	DEFAULT_DISPLAY_MODE,
+	DISPLAY_MODES,
 	type DisplayMode,
 	isDisplayMode,
 	type Pico8Adapter,
@@ -72,9 +73,23 @@ export function createShellAdapterFactory(
 }
 
 /**
- * The display mode a command handler sees. The root middleware in `createCli`
- * resolves it (flag > env > config > default) into the `display` var; a command
- * mounted on a bare CLI (some tests) has no var and gets the default.
+ * The `display` option of the commands that use the display mode (`run`,
+ * `audio record`, `audio render`, `doctor`). A per-command option, not an incur
+ * global, because incur's MCP transport passes no globals: as an option it is
+ * also an argument of the MCP tool. Unset = the invocation-level value.
+ */
+export const DISPLAY_OPTION = z
+	.enum(DISPLAY_MODES)
+	.optional()
+	.describe(
+		'How a PICO-8 -run session (audio recording) gets a display: auto (default: a private virtual display only when there is none), xvfb (always virtual), native (as-is). Else PICOPILOT_DISPLAY, else picopilot.json "display".',
+	);
+
+/**
+ * The display mode the root middleware in `createCli` resolved for this
+ * invocation (top-level `--display` > PICOPILOT_DISPLAY > picopilot.json >
+ * auto). A command mounted on a bare CLI (some tests) has no var and gets the
+ * default.
  */
 export function displayModeOf(vars: unknown): DisplayMode {
 	const value =
@@ -82,6 +97,59 @@ export function displayModeOf(vars: unknown): DisplayMode {
 			? (vars as {display?: unknown}).display
 			: undefined;
 	return isDisplayMode(value) ? value : DEFAULT_DISPLAY_MODE;
+}
+
+/**
+ * The display mode a command uses: its own `display` option (a per-call MCP
+ * argument) wins, else the invocation-level value. An invalid invocation-level
+ * value (a typo in PICOPILOT_DISPLAY, say) is an `invalid-display-mode` error
+ * here, so only the commands that use the mode fail on it.
+ */
+export function resolveCommandDisplay(
+	option: DisplayMode | undefined,
+	vars: unknown,
+):
+	| {ok: true; mode: DisplayMode}
+	| {
+			ok: false;
+			error: {code: 'invalid-display-mode'; message: string; exitCode: number};
+	  } {
+	if (option !== undefined) return {ok: true, mode: option};
+	const problem =
+		vars !== null && typeof vars === 'object'
+			? (vars as {displayError?: unknown}).displayError
+			: undefined;
+	if (typeof problem === 'string') {
+		return {
+			ok: false,
+			error: {code: 'invalid-display-mode', message: problem, exitCode: 1},
+		};
+	}
+	return {ok: true, mode: displayModeOf(vars)};
+}
+
+/**
+ * Under `--mcp`, incur loads no config file, so picopilot loads picopilot.json
+ * itself and hands the tree to commands as the `mcpConfig` var. A command whose
+ * option can come from the config reads its fallback here (CLI runs get it from
+ * incur as the option's default, so this is undefined there).
+ */
+export function mcpConfigOption(
+	vars: unknown,
+	commandPath: readonly string[],
+	key: string,
+): unknown {
+	let node: unknown =
+		vars !== null && typeof vars === 'object'
+			? (vars as {mcpConfig?: unknown}).mcpConfig
+			: undefined;
+	for (const part of commandPath) {
+		node = (node as {commands?: Record<string, unknown>} | undefined)
+			?.commands?.[part];
+	}
+	return (node as {options?: Record<string, unknown>} | undefined)?.options?.[
+		key
+	];
 }
 
 /**

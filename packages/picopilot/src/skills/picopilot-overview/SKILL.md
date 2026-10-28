@@ -19,7 +19,7 @@ Run `picopilot doctor` before anything else on a machine you have not used yet. 
 
 Every picopilot command works on a machine with no display and no sound card (a server, CI, an agent sandbox). Screenshots, `playtest` and `export` run PICO-8 headless. Audio recording (`audio render`, `audio record`, `run --record-audio`) needs a real PICO-8 session with a window, and picopilot provides one by itself: with the default display mode `auto`, when there is no display it starts a private virtual display for that recording and removes it afterwards. You do not need to set anything up. Only if `doctor` lists the audio commands as unavailable with `missing: display` (or a recording fails with `display-unavailable`) does the machine lack Xvfb; the error names the install command to suggest to the human.
 
-The display mode can be forced with `--display xvfb` (always virtual) or `--display native` (use the current display as-is), also settable as `PICOPILOT_DISPLAY` or `"display"` in `picopilot.json` (when picopilot runs as an MCP server, only `PICOPILOT_DISPLAY` in the server's environment applies). Leave it at `auto` unless a human asks otherwise.
+The display mode can be forced with `--display xvfb` (always virtual) or `--display native` (use the current display as-is), also settable as `PICOPILOT_DISPLAY` or `"display"` in `picopilot.json`. Through MCP, the same `display` is an argument of the `run`, `audio_record`, `audio_render` and `doctor` tools. Leave it at `auto` unless a human asks otherwise.
 
 ## The #include discipline (how every picopilot cart is laid out)
 

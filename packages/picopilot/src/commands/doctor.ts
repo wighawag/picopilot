@@ -15,8 +15,9 @@ import {
 } from '../engine/pico8/index.js';
 import {
 	createShellAdapterFactory,
-	displayModeOf,
+	DISPLAY_OPTION,
 	PICO8_ENV,
+	resolveCommandDisplay,
 	type Pico8AdapterFactory,
 } from './pico8-env.js';
 import {
@@ -112,6 +113,7 @@ export function registerDoctor(cli: Cli.Cli, deps: DoctorDeps = {}): void {
 		description:
 			'Report what this machine can do: PICO-8 (found, runs headless, version), shrinko8, the display a PICO-8 -run session would use (native / virtual Xvfb / none), and which picopilot commands are therefore available. Call this first on a new machine.',
 		env: PICO8_ENV,
+		options: z.object({display: DISPLAY_OPTION}),
 		output: z.object({
 			pico8: z.object({
 				found: z.boolean().describe('Whether the PICO-8 binary was found.'),
@@ -162,8 +164,10 @@ export function registerDoctor(cli: Cli.Cli, deps: DoctorDeps = {}): void {
 				)
 				.describe('Commands that do not, and what they are missing.'),
 		}),
-		async run({env, ok, var: vars}) {
-			const display: DisplayMode = displayModeOf(vars);
+		async run({env, ok, error, options, var: vars}) {
+			const resolved = resolveCommandDisplay(options.display, vars);
+			if (!resolved.ok) return error(resolved.error);
+			const display: DisplayMode = resolved.mode;
 			const childEnv = pico8ChildEnv(
 				env as Record<string, string | undefined>,
 				deps.parentEnv ?? process.env,

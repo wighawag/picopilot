@@ -16,10 +16,11 @@ import {
 import {makeReadInclude} from './cart-includes.js';
 import {
 	createShellAdapterFactory,
-	displayModeOf,
+	DISPLAY_OPTION,
 	displayUnavailableError,
 	PICO8_ENV,
 	pico8NotFoundError,
+	resolveCommandDisplay,
 	type Pico8AdapterFactory,
 } from './pico8-env.js';
 
@@ -96,6 +97,7 @@ export function registerRun(
 				.describe(
 					'One-shot scripted input passed as `-p` (the cart reads it via stat(6)) for automated playtests.',
 				),
+			display: DISPLAY_OPTION,
 			recordAudio: z
 				.boolean()
 				.default(false)
@@ -183,8 +185,12 @@ export function registerRun(
 					: mkdtempSync(join(tmpdir(), 'picopilot-run-'));
 			if (!existsSync(shotDir)) mkdirSync(shotDir, {recursive: true});
 
+			// The display mode only matters to the --record-audio (-run) pass, so a
+			// bad PICOPILOT_DISPLAY only fails a run that records.
+			const display = resolveCommandDisplay(options.display, vars);
+			if (options.recordAudio && !display.ok) return error(display.error);
 			const adapter = adapterFactory(env as NodeJS.ProcessEnv, {
-				display: displayModeOf(vars),
+				display: display.ok ? display.mode : 'auto',
 			});
 			const result = await adapter.run({
 				cartPath,

@@ -70,6 +70,7 @@ describe('display mode resolution through the CLI', () => {
 		for (const argv of [
 			['--display', 'native', 'probe-display'],
 			['probe-display', '--display', 'native'],
+			['probe-display', '--display=native'],
 		]) {
 			const {out} = await probe(
 				argv,
@@ -84,7 +85,7 @@ describe('display mode resolution through the CLI', () => {
 		const cli = createCli();
 		let stdout = '';
 		let exitCode = 0;
-		await cli.serve(['run', join(dir, 'none.p8'), '--json'], {
+		await cli.serve(['doctor', '--json'], {
 			stdout(s) {
 				stdout += s;
 			},
@@ -97,6 +98,46 @@ describe('display mode resolution through the CLI', () => {
 		const out = JSON.parse(stdout);
 		expect(out.code).toBe('invalid-display-mode');
 		expect(out.message).toContain('PICOPILOT_DISPLAY');
+	});
+
+	it('an invalid --display is an error for a display command', async () => {
+		const cli = createCli();
+		let stdout = '';
+		let exitCode = 0;
+		await cli.serve(['doctor', '--display', 'bogus', '--json'], {
+			stdout(s) {
+				stdout += s;
+			},
+			exit(code) {
+				exitCode = code;
+			},
+			env: {},
+		});
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('--display');
+	});
+
+	it('a --display with no value is rejected, and does not eat the next flag', async () => {
+		for (const argv of [
+			['doctor', '--display', '--json'],
+			['doctor', '--json', '--display'],
+		]) {
+			const cli = createCli();
+			let stdout = '';
+			let exitCode = 0;
+			await cli.serve(argv, {
+				stdout(s) {
+					stdout += s;
+				},
+				exit(code) {
+					exitCode = code;
+				},
+				env: {},
+			});
+			expect(exitCode, argv.join(' ')).not.toBe(0);
+			// --json still applied: the error envelope is JSON.
+			expect(() => JSON.parse(stdout), argv.join(' ')).not.toThrow();
+		}
 	});
 
 	it('an invalid value does not break commands that never use the display', async () => {
