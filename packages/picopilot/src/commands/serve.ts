@@ -12,8 +12,10 @@ import {type Cli, z} from 'incur';
 import {
 	EXPORT_HTML_NAME,
 	type Pico8Adapter,
+	type Pico8ExportResult,
 	ShellPico8Adapter,
 } from '../engine/pico8/index.js';
+import {prepareLabeledCart} from './label-cart.js';
 
 /**
  * Injects the PICO-8 adapter `serve` uses (defaults to the shell adapter). Same
@@ -174,6 +176,12 @@ export function registerServe(
 				),
 		}),
 		options: z.object({
+			label: z
+				.string()
+				.optional()
+				.describe(
+					'PNG to bake in as the __label__ (the export splash) for a cart that has none: a `run`/`playtest` screenshot as-is, or any 128x128 PNG. The cart itself is not modified. Ignored if the cart already has a label.',
+				),
 			port: z
 				.number()
 				.int()
@@ -210,6 +218,12 @@ export function registerServe(
 				args: {cart: 'game.p8'},
 				options: {port: 8080},
 			},
+			{
+				description:
+					'Serve a labelless cart, using a `run` screenshot as the splash',
+				args: {cart: 'game.p8'},
+				options: {label: './shots/<name>.png'},
+			},
 		],
 		async run({args, options, env, error, ok}) {
 			const cartPath = isAbsolute(args.cart)
@@ -224,16 +238,39 @@ export function registerServe(
 				});
 			}
 
+			// --label: export a labeled throwaway copy (shared with `export`; the
+			// cart is never mutated). A bad image fails before anything is exported.
+			const labeled = prepareLabeledCart(cartPath, options.label);
+			if (!labeled.ok) {
+				return error({
+					code: labeled.code,
+					message: labeled.message,
+					exitCode: 1,
+					...(labeled.cta ? {cta: labeled.cta} : {}),
+				});
+			}
+
 			// Always export first, into an isolated temp dir (never a user path or
 			// ~/Desktop). The bundle is the standalone pair the static server plays.
-			const serveDir = mkdtempSync(join(tmpdir(), 'picopilot-serve-'));
-			const adapter = adapterFactory(env as NodeJS.ProcessEnv);
-			const result = await adapter.export({
-				cartPath,
-				outDir: serveDir,
-				htmlName: EXPORT_HTML_NAME,
-				backstopMs: options.backstopMs,
-			});
+			// The labeled copy (in the user's cart dir) is removed on every path; a
+			// throw also reaps the temp dir, since nothing will be served from it.
+			let result: Pico8ExportResult;
+			let serveDir: string | undefined;
+			try {
+				serveDir = mkdtempSync(join(tmpdir(), 'picopilot-serve-'));
+				const adapter = adapterFactory(env as NodeJS.ProcessEnv);
+				result = await adapter.export({
+					cartPath: labeled.cartPath,
+					outDir: serveDir,
+					htmlName: EXPORT_HTML_NAME,
+					backstopMs: options.backstopMs,
+				});
+			} catch (e) {
+				if (serveDir !== undefined) removeDir(serveDir);
+				throw e;
+			} finally {
+				labeled.cleanup();
+			}
 
 			if (!result.ok) {
 				// Nothing is being served: remove the temp dir now, not on exit.
@@ -250,7 +287,7 @@ export function registerServe(
 				return error({
 					code: 'export-failed',
 					message: result.value.labelWarning
-						? 'PICO-8 produced no bundle: this cart has no __label__ (the export splash), which the browser export needs. To just SEE your own build work, use `picopilot run` or `picopilot playtest` (no label needed) instead of serve. If you genuinely want a browser build to SHARE, bake a label first with `picopilot export --label <128x128.png>` (do NOT hand-edit main.p8), then re-serve.'
+						? 'PICO-8 produced no bundle: this cart has no __label__ (the export splash), which the browser export needs. To just SEE your own build work, use `picopilot run` or `picopilot playtest` (no label needed) instead of serve. If you genuinely want a browser build to SHARE, pass a splash image: `picopilot serve <cart> --label <screenshot.png>` (any path `run`/`playtest` lists under `screenshots` works as-is; do NOT hand-edit main.p8).'
 						: 'PICO-8 produced no export bundle. Check the cart runs without a boot error (via `picopilot run`).',
 					exitCode: 1,
 				});

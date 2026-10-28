@@ -1,6 +1,6 @@
 ---
 name: picopilot-debug
-description: Close the run-test loop for a PICO-8 cart with picopilot. Run the cart headless and read printh output, use the static verify gate honestly (well-formed is not proven-to-run), and understand the structured pico8-not-found / shrinko-not-found boundaries. Use when a cart misbehaves or you need to confirm it boots.
+description: Close the run-test loop for a PICO-8 cart with picopilot. Run the cart headless and read printh output, use the static verify gate honestly (well-formed is not proven-to-run), understand the structured pico8-not-found / shrinko-not-found boundaries, and export with a screenshot as the label splash. Use when a cart misbehaves, you need to confirm it boots, or you are exporting it.
 ---
 
 # picopilot debug
@@ -180,6 +180,17 @@ session (A) for true continuity: long games, or games that reseed from a
 NON-deterministic source (wall-clock/entropy) mid-run and so cannot be replayed
 from frame 0. Both drive the SAME cart-side transform; only the host lifecycle
 differs.
+
+## Ship it: `picopilot export` and the label splash
+
+`picopilot export <cart> [dest]` writes a playable `index.html` + `index.js` bundle (requires PICO-8). PICO-8 needs a `__label__` (the loading splash) to export well; a labelless cart gives a blank splash or no bundle at all. Give it one from the game itself, with no image tool:
+
+```sh
+picopilot run main.p8 --shot-dir shots           # the cart calls extcmd("screen") on a good frame
+picopilot export main.p8 out --label shots/<name>.png   # <name>: a path `run` lists under `screenshots`
+```
+
+Pass the screenshot unchanged. `run` and `playtest` write PICO-8's pixel-exact upscale (384x384 at the default 3x `screenshot_scale`), and `--label` accepts any square multiple of 128 (128x128, 256x256, 384x384, ...) and samples it back down to 128x128. Any 128x128 PNG works too, including palette-indexed and greyscale ones. Do NOT resize or convert it with ImageMagick first: that is never needed, and a resize that is not an exact multiple is rejected (`label-wrong-size`). An existing `__label__` in the cart always wins; `--label` only fills a missing one. `--label` never writes into your cart (it exports a labeled copy), so pass it on every export. `picopilot serve` (play the build in a browser) takes the same `--label` for the same reason: `picopilot serve main.p8 --label shots/<name>.png`.
 
 ## The two structured boundaries
 

@@ -1,9 +1,16 @@
 import {execFileSync} from 'node:child_process';
-import {existsSync, mkdtempSync, writeFileSync} from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Cli} from 'incur';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import {encodePng} from '../engine/gfx/index.js';
 import type {
 	ExportOptions,
 	Pico8Adapter,
@@ -211,7 +218,11 @@ describe('picopilot serve: failure paths', () => {
 		const lower = stdout.toLowerCase();
 		expect(lower).toContain('picopilot run');
 		expect(lower).toContain('playtest');
-		expect(lower).toContain('export --label');
+		// The remedy must be one that WORKS: `export --label` never writes the label
+		// into the cart, so "export --label, then re-serve" would fail again. serve
+		// takes the label itself.
+		expect(lower).toMatch(/picopilot serve [^`]*--label/);
+		expect(lower).not.toContain('then re-serve');
 		expect(lower).toContain('do not hand-edit main.p8');
 	});
 
@@ -223,5 +234,76 @@ describe('picopilot serve: failure paths', () => {
 		);
 		expect(exitCode).not.toBe(0);
 		expect(stdout).toContain('no cart at');
+	});
+});
+
+describe('picopilot serve: --label (bake a screenshot in for a labelless cart)', () => {
+	const shotPath = new URL(
+		'../engine/gfx/fixtures/pico8-screenshot-384.png',
+		import.meta.url,
+	);
+
+	it('exports a labeled COPY (the screenshot as-is), leaves the cart untouched, and cleans the copy up', async () => {
+		const labelFile = join(dir, 'shot.png');
+		writeFileSync(labelFile, readFileSync(shotPath));
+		let exportedCart = '';
+		const exportSeen: {options?: ExportOptions} = {};
+		const {exitCode} = await runServe(
+			() => {
+				const inner = stubAdapter('writes-bundle', exportSeen);
+				return {
+					...inner,
+					export: async (o: ExportOptions) => {
+						exportedCart = readFileSync(o.cartPath, 'utf8');
+						return inner.export(o);
+					},
+				} as Pico8Adapter;
+			},
+			fakeServer(),
+			['serve', cartPath, '--label', labelFile, '--json'],
+		);
+		expect(exitCode).toBe(0);
+		expect(exportSeen.options!.cartPath).not.toBe(cartPath);
+		const label = exportedCart.split('__label__\n')[1]!.split('\n');
+		expect(label[10]![10]).toBe('8');
+		expect(label[100]![100]).toBe('c');
+		expect(readFileSync(cartPath, 'utf8')).not.toContain('__label__');
+		// Only the cart and the label image remain: the labeled copy is gone.
+		expect(readdirSync(dir).sort()).toEqual(['main.p8', 'shot.png']);
+	});
+
+	it('removes the labeled copy even when the export step throws', async () => {
+		const labelFile = join(dir, 'shot.png');
+		writeFileSync(labelFile, readFileSync(shotPath));
+		await runServe(
+			() =>
+				({
+					...stubAdapter('writes-bundle'),
+					export: async () => {
+						throw new Error('boom');
+					},
+				}) as Pico8Adapter,
+			fakeServer(),
+			['serve', cartPath, '--label', labelFile, '--json'],
+		).catch(() => undefined);
+		expect(readdirSync(dir).sort()).toEqual(['main.p8', 'shot.png']);
+	});
+
+	it('surfaces a bad label image as label-wrong-size with the screenshot CTA, before exporting', async () => {
+		const labelFile = join(dir, 'odd.png');
+		writeFileSync(
+			labelFile,
+			encodePng({width: 200, height: 200, rgb: new Uint8Array(200 * 200 * 3)}),
+		);
+		const exportSeen: {options?: ExportOptions} = {};
+		const {stdout, exitCode} = await runServe(
+			() => stubAdapter('writes-bundle', exportSeen),
+			fakeServer(),
+			['serve', cartPath, '--label', labelFile, '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('label-wrong-size');
+		expect(stdout).toContain('scaled for you');
+		expect(exportSeen.options).toBeUndefined();
 	});
 });

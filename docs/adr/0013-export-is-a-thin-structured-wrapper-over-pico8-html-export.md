@@ -1,5 +1,7 @@
 # `picopilot export` is a THIN structured wrapper over `pico8 -export`, standalone-first with a payload-only split
 
+Amended by ADR-0015: `--label` also accepts a `run`/`playtest` screenshot as-is (any square multiple of 128x128), and `serve` takes the same `--label`.
+
 `picopilot export <cart> [dest]` shells out to PICO-8's own HTML export over the HEADLESS path (`pico8 <cart> -export <dest>/index.html -x`, no display needed, verified running with `DISPLAY` unset) and collects the produced pair into one structured result: the shell `index.html`, the Emscripten runtime + baked-in cart payload `index.js`, the file list, and a `labelWarning` flag. It names the pair `index.html` + `index.js` so a `dest` folder (e.g. `./website/static/games/<slug>/`) is directly serveable and showcase-ready. PICO-8 owns the bundle; picopilot only adds the glue (resolve cart, pick/create the out dir, name the pair, structure the result, surface the labelless-cart warning), mirroring the `run` stance (ADR-0006). It hard-requires the paid binary; absence is the first-class `pico8-not-found` value + a nonzero exit (never a crash), the CI-testable boundary via the injected adapter/spawn seams.
 
 ## Considered Options

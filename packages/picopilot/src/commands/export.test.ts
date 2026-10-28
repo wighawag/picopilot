@@ -265,6 +265,92 @@ describe('picopilot export: --label (bake a PNG in as the __label__ splash)', ()
 		expect(exitCode).not.toBe(0);
 		expect(stdout).toContain('128x128');
 	});
+
+	it('accepts a PICO-8 screenshot as-is (384x384, as `run` writes it) and bakes it in', async () => {
+		const shot = readFileSync(
+			new URL(
+				'../engine/gfx/fixtures/pico8-screenshot-384.png',
+				import.meta.url,
+			),
+		);
+		const labelFile = join(dir, 'shot.png');
+		writeFileSync(labelFile, shot);
+		let labeledCart = '';
+		const {exitCode} = await runExport(() => {
+			const inner = stubAdapter('writes-bundle');
+			return {
+				...inner,
+				export: async (o: ExportOptions) => {
+					labeledCart = readFileSync(o.cartPath, 'utf8');
+					return inner.export(o);
+				},
+			} as Pico8Adapter;
+		}, ['export', cartPath, join(dir, 'out'), '--label', labelFile, '--json']);
+		expect(exitCode).toBe(0);
+		const label = labeledCart.split('__label__\n')[1]!.split('\n');
+		// The fixture: red (8) top-left quadrant, blue (12) bottom-right, dark blue (1) bg.
+		expect(label[10]![10]).toBe('8');
+		expect(label[100]![100]).toBe('c');
+		expect(label[100]![10]).toBe('1');
+	});
+
+	it('removes the labeled copy even when the export step throws', async () => {
+		const labelFile = join(dir, 'label.png');
+		writeFileSync(labelFile, labelPng());
+		await runExport(
+			() =>
+				({
+					...stubAdapter('writes-bundle'),
+					export: async () => {
+						throw new Error('boom');
+					},
+				}) as Pico8Adapter,
+			['export', cartPath, join(dir, 'out'), '--label', labelFile, '--json'],
+		).catch(() => undefined);
+		expect(
+			readdirSync(dir).filter((f) => f.startsWith('.picopilot-export-')),
+		).toEqual([]);
+	});
+
+	it('points a wrong-size label error at passing a picopilot screenshot directly', async () => {
+		const odd = encodePng({
+			width: 200,
+			height: 200,
+			rgb: new Uint8Array(200 * 200 * 3),
+		});
+		const labelFile = join(dir, 'odd.png');
+		writeFileSync(labelFile, odd);
+		const {stdout, exitCode} = await runExport(
+			() => stubAdapter('writes-bundle'),
+			['export', cartPath, join(dir, 'out'), '--label', labelFile, '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('label-wrong-size');
+		expect(stdout).toContain('384x384');
+		expect(stdout.toLowerCase()).toContain('screenshot');
+		expect(stdout).toContain('scaled for you');
+	});
+
+	it('points an unsupported-PNG label error at the same fix', async () => {
+		// A valid PNG signature + IHDR claiming an interlaced image: unsupported.
+		const png = encodePng({
+			width: 128,
+			height: 128,
+			rgb: new Uint8Array(128 * 128 * 3),
+		});
+		// IHDR data starts at byte 16; the interlace byte is the 13th (offset 28).
+		png[28] = 1;
+		const labelFile = join(dir, 'interlaced.png');
+		writeFileSync(labelFile, png);
+		const {stdout, exitCode} = await runExport(
+			() => stubAdapter('writes-bundle'),
+			['export', cartPath, join(dir, 'out'), '--label', labelFile, '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('label-unsupported-png');
+		expect(stdout.toLowerCase()).toContain('screenshot');
+		expect(stdout).toContain('scaled for you');
+	});
 });
 
 describe('picopilot export: labelless cart + failure paths', () => {

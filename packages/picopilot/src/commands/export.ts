@@ -1,22 +1,14 @@
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname, isAbsolute, join, resolve} from 'node:path';
+import {isAbsolute, join, resolve} from 'node:path';
 import {type Cli, z} from 'incur';
-import {Cart, CartParseError} from '../engine/cart/index.js';
-import {labelHexFromPng, LabelError} from '../engine/gfx/index.js';
 import {
 	EXPORT_HTML_NAME,
 	type Pico8Adapter,
+	type Pico8ExportResult,
 	ShellPico8Adapter,
 } from '../engine/pico8/index.js';
+import {prepareLabeledCart} from './label-cart.js';
 
 /**
  * Injects the PICO-8 adapter `export` uses (defaults to the shell adapter over
@@ -83,7 +75,7 @@ export function registerExport(
 				.string()
 				.optional()
 				.describe(
-					'Path to a 128x128 PNG to bake in as the cart __label__ (the export splash), for a cart that has none. Ignored if the cart already has a label.',
+					'PNG to bake in as the cart __label__ (the export splash), for a cart that has none: a `run`/`playtest` screenshot as-is (any 128*k square, e.g. 384x384, is scaled down for you) or any 128x128 PNG. Ignored if the cart already has a label.',
 				),
 			payloadOnly: z
 				.boolean()
@@ -136,9 +128,10 @@ export function registerExport(
 				args: {cart: 'game.p8', dest: './website/static/games/my-game'},
 			},
 			{
-				description: 'Bake a PNG as the label splash for a labelless cart',
+				description:
+					'Bake a `run` screenshot in as the label splash for a labelless cart',
 				args: {cart: 'game.p8', dest: './website/static/games/my-game'},
-				options: {label: './label.png'},
+				options: {label: './shots/<name>.png'},
 			},
 			{
 				description:
@@ -161,56 +154,17 @@ export function registerExport(
 				});
 			}
 
-			// --label <png>: bake a 128x128 PNG in as the cart's __label__ so a
-			// labelless cart gets a splash without an interactive F7 capture. We do
-			// NOT mutate the user's cart: we write a labeled copy NEXT TO it (same dir,
-			// so `#include main.lua` still resolves) and export that, then clean it up.
-			// A cart that ALREADY has a label wins (the flag is a fallback, not an
-			// override), matching the export precedence PICO-8 itself uses.
-			let exportCartPath = cartPath;
-			let labeledCopy: string | undefined;
-			if (options.label !== undefined) {
-				const labelPath = isAbsolute(options.label)
-					? options.label
-					: resolve(process.cwd(), options.label);
-				if (!existsSync(labelPath)) {
-					return error({
-						code: 'label-not-found',
-						message: `no label image at ${labelPath}`,
-						exitCode: 1,
-					});
-				}
-				try {
-					const cart = Cart.parse(readFileSync(cartPath, 'utf8'));
-					const existingLabel = cart.getSection('label');
-					if (existingLabel === undefined || existingLabel.trim() === '') {
-						const hex = labelHexFromPng(readFileSync(labelPath));
-						cart.setSection('label', hex);
-						labeledCopy = join(
-							dirname(cartPath),
-							`.picopilot-export-${process.pid}-${Date.now()}.p8`,
-						);
-						writeFileSync(labeledCopy, cart.serialize());
-						exportCartPath = labeledCopy;
-					}
-					// else: cart already has a label; keep it, ignore --label.
-				} catch (e) {
-					if (e instanceof LabelError) {
-						return error({
-							code: `label-${e.code}`,
-							message: e.message,
-							exitCode: 1,
-						});
-					}
-					if (e instanceof CartParseError) {
-						return error({
-							code: `cart-${e.code}`,
-							message: `could not parse the cart to inject a label: ${e.message}`,
-							exitCode: 1,
-						});
-					}
-					throw e;
-				}
+			// --label <png>: bake a PNG in as the __label__ of a throwaway copy (the
+			// user's cart is never mutated; an existing label wins). Shared with
+			// `serve`, see label-cart.ts.
+			const labeled = prepareLabeledCart(cartPath, options.label);
+			if (!labeled.ok) {
+				return error({
+					code: labeled.code,
+					message: labeled.message,
+					exitCode: 1,
+					...(labeled.cta ? {cta: labeled.cta} : {}),
+				});
 			}
 
 			// Output dir: a user-given dest (point it at the showcase), else an
@@ -221,24 +175,22 @@ export function registerExport(
 						? args.dest
 						: resolve(process.cwd(), args.dest)
 					: mkdtempSync(join(tmpdir(), 'picopilot-export-'));
-			if (!existsSync(outDir)) mkdirSync(outDir, {recursive: true});
 
-			const adapter = adapterFactory(env as NodeJS.ProcessEnv);
-			const result = await adapter.export({
-				cartPath: exportCartPath,
-				outDir,
-				htmlName: EXPORT_HTML_NAME,
-				backstopMs: options.backstopMs,
-			});
-
-			// Remove the temporary labeled copy now that PICO-8 has read it (on every
-			// path below); best-effort, a leftover dotfile is not fatal.
-			if (labeledCopy !== undefined) {
-				try {
-					rmSync(labeledCopy);
-				} catch {
-					// ignore
-				}
+			// The labeled copy lives in the user's cart dir, so remove it on EVERY
+			// path once PICO-8 has read it, including a throw from the dir setup or
+			// the adapter.
+			let result: Pico8ExportResult;
+			try {
+				if (!existsSync(outDir)) mkdirSync(outDir, {recursive: true});
+				const adapter = adapterFactory(env as NodeJS.ProcessEnv);
+				result = await adapter.export({
+					cartPath: labeled.cartPath,
+					outDir,
+					htmlName: EXPORT_HTML_NAME,
+					backstopMs: options.backstopMs,
+				});
+			} finally {
+				labeled.cleanup();
 			}
 
 			if (!result.ok) {
@@ -259,7 +211,7 @@ export function registerExport(
 				return error({
 					code: 'export-failed',
 					message: labelWarning
-						? 'PICO-8 produced no bundle (the cart has no __label__ to embed). Give it one with --label <128x128.png>, or capture a label in PICO-8 (F7), then re-export.'
+						? 'PICO-8 produced no bundle (the cart has no __label__ to embed). Give it one with --label <screenshot.png> (a `picopilot run`/`playtest` screenshot works as-is), or capture a label in PICO-8 (F7), then re-export.'
 						: 'PICO-8 produced no export bundle. Check the cart runs without a boot error.',
 					exitCode: 1,
 				});
@@ -285,9 +237,9 @@ export function registerExport(
 								'The cart has no __label__, so the export splash is blank. Add one for a nicer bundle:',
 							commands: [
 								{
-									command: 'export --label <128x128.png>',
+									command: 'export --label <screenshot.png>',
 									description:
-										'Bake a PNG in as the label splash, or capture one in PICO-8 (F7) before exporting.',
+										'Bake a `run`/`playtest` screenshot in as the label splash (passed as-is, it is scaled for you), or capture one in PICO-8 (F7) before exporting.',
 								},
 							],
 						}

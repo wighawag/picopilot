@@ -185,6 +185,13 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 		expect(md.toLowerCase()).toContain('offline export');
 	});
 
+	it('picopilot-debug documents a run/playtest screenshot as the export label, as-is', () => {
+		const md = readSkill('picopilot-debug');
+		expect(md).toContain('--label');
+		expect(md).toContain('384x384');
+		expect(md.toLowerCase()).toContain('no image tool');
+	});
+
 	it('picopilot-debug carries the static-gate + run loop and the dependency boundaries', () => {
 		const md = readSkill('picopilot-debug');
 		expect(md).toContain('picopilot verify');
