@@ -52,6 +52,18 @@ afterEach(() => {
  */
 function stubAdapter(result: ShrinkoResult<CountReport>): ShrinkoAdapter {
 	return {
+		async lint() {
+			throw new Error('lint not used');
+		},
+		async minify() {
+			throw new Error('minify not used');
+		},
+		async exportSpritesheet() {
+			throw new Error('exportSpritesheet not used');
+		},
+		async importSpritesheet() {
+			throw new Error('importSpritesheet not used');
+		},
 		async count() {
 			return result;
 		},

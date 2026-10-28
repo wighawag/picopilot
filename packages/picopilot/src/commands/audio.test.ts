@@ -54,6 +54,12 @@ function stubAdapter(
 	seen?: {record?: RecordOptions},
 ): Pico8Adapter {
 	return {
+		async drive() {
+			throw new Error('drive not used');
+		},
+		async export() {
+			throw new Error('export not used');
+		},
 		async run(_options: RunOptions) {
 			return {
 				ok: true,
@@ -171,6 +177,12 @@ describe('audio render: orchestration against a fake runner', () => {
 		let recordCalled = false;
 		const {stdout, exitCode} = await runAudio(
 			() => ({
+				async drive() {
+					throw new Error('drive not used');
+				},
+				async export() {
+					throw new Error('export not used');
+				},
 				async run() {
 					return {
 						ok: true,

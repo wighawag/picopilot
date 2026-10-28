@@ -30,6 +30,7 @@
     "dev": "ldenv pnpm --filter './packages/*' dev",
     "build": "ldenv pnpm --filter './packages/*' build",
     "test": "pnpm --filter './packages/*' test",
+    "typecheck": "pnpm --filter './packages/*' typecheck",
     "---------------------- WEBSITE ----------------------": "",
     "website:dev": "ldenv pnpm --filter ./website dev",
     "website:build": "ldenv pnpm --filter ./website build",

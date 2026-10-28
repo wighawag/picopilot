@@ -32,6 +32,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
     "dev": "as-soon -w src pnpm build",
     "test": "vitest run",
     "test:watch": "vitest",

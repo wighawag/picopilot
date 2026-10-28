@@ -34,6 +34,22 @@ afterEach(() => {
 	}
 });
 
+/** The ShrinkoAdapter members `tokens` never calls, for hand-built adapters. */
+const unusedShrinko: Omit<ShrinkoAdapter, 'count'> = {
+	async lint() {
+		throw new Error('lint not used');
+	},
+	async minify() {
+		throw new Error('minify not used');
+	},
+	async exportSpritesheet() {
+		throw new Error('exportSpritesheet not used');
+	},
+	async importSpritesheet() {
+		throw new Error('importSpritesheet not used');
+	},
+};
+
 /**
  * A stub {@link ShrinkoAdapter} standing in for BOTH a shrinko-present shell
  * adapter and a hypothetical native-TS adapter. It never spawns anything, so no
@@ -42,6 +58,7 @@ afterEach(() => {
  */
 function stubAdapter(result: ShrinkoResult<CountReport>): ShrinkoAdapter {
 	return {
+		...unusedShrinko,
 		async count() {
 			return result;
 		},
@@ -163,6 +180,7 @@ describe('picopilot tokens: seam-swap (a stub adapter leaves output/exit unchang
 		const value = present(true);
 		// A: returns the value synchronously-resolved.
 		const adapterA: ShrinkoAdapter = {
+			...unusedShrinko,
 			async count() {
 				return value;
 			},
@@ -170,6 +188,7 @@ describe('picopilot tokens: seam-swap (a stub adapter leaves output/exit unchang
 		// B: a DIFFERENT implementation (extra async work, freshly-built struct) that
 		// yields the same count. Stands in for a native-TS shrinko behind the seam.
 		const adapterB: ShrinkoAdapter = {
+			...unusedShrinko,
 			async count() {
 				await Promise.resolve();
 				const v = value.ok ? value.value : undefined;

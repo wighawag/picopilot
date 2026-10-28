@@ -47,6 +47,12 @@ function stubAdapter(
 	recordResult?: Pico8RecordResult,
 ): Pico8Adapter {
 	return {
+		async drive() {
+			throw new Error('drive not used');
+		},
+		async export() {
+			throw new Error('export not used');
+		},
 		async run(options) {
 			if (seen !== undefined) seen.options = options;
 			return result;

@@ -144,7 +144,7 @@ describe('ShellPico8Adapter: sentinel-driven termination', () => {
 		proc.emit(`${DONE_SENTINEL}\n`);
 		await resultP;
 		expect(spawnArgs).toContain('-home');
-		const home = spawnArgs[spawnArgs.indexOf('-home') + 1];
+		const home = spawnArgs[spawnArgs.indexOf('-home') + 1]!;
 		// Points at an isolated temp dir, NOT the process CWD.
 		expect(home.startsWith(tmpdir())).toBe(true);
 		expect(home).not.toBe(process.cwd());

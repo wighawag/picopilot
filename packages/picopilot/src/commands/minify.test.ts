@@ -41,6 +41,12 @@ function stubAdapter(
 	seen?: {outPath?: string},
 ): ShrinkoAdapter {
 	return {
+		async exportSpritesheet() {
+			throw new Error('exportSpritesheet not used');
+		},
+		async importSpritesheet() {
+			throw new Error('importSpritesheet not used');
+		},
 		async count() {
 			throw new Error('not used');
 		},

@@ -34,6 +34,12 @@ afterEach(() => {
 /** A stub adapter whose `lint` returns whatever the test wires; `count`/`minify` unused here. */
 function stubAdapter(result: ShrinkoResult<LintReport>): ShrinkoAdapter {
 	return {
+		async exportSpritesheet() {
+			throw new Error('exportSpritesheet not used');
+		},
+		async importSpritesheet() {
+			throw new Error('importSpritesheet not used');
+		},
 		async count() {
 			throw new Error('not used');
 		},

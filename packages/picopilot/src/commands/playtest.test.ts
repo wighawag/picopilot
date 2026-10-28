@@ -58,6 +58,9 @@ function stubAdapter(
 	seen?: {options?: DriveOptions},
 ): Pico8Adapter {
 	return {
+		async export() {
+			throw new Error('export not used');
+		},
 		async run() {
 			throw new Error('run not used by playtest');
 		},
