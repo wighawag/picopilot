@@ -14,7 +14,7 @@
 
 import {spawn} from 'node:child_process';
 import {createConnection, createServer, type Socket} from 'node:net';
-import {existsSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, rmSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
@@ -206,7 +206,10 @@ export function serveSession(options: ServeSessionOptions): {
 				}
 				case 'shot': {
 					const r: ShotResult = await session.shot();
-					const screenshot = collectShot(options.paths.shotDir, r.shotName);
+					const screenshot = await collectShot(
+						options.paths.shotDir,
+						r.shotName,
+					);
 					return ok(options.id, {
 						frame: r.frame,
 						ack: r.ack,
@@ -285,22 +288,27 @@ function ok(
 	return {ok: true, value: {id, ...partial}};
 }
 
+/** How long `shot` waits for PICO-8 to write the PNG after acking the SHOT. */
+const SHOT_FILE_TIMEOUT_MS = 3000;
+const SHOT_FILE_POLL_MS = 20;
+
 /**
- * Resolves the absolute path of the screenshot a SHOT just produced in the
- * `-desktop` dir. The cart named it `<shotName>` (basename) and PICO-8 appends
- * `.png`; if the exact file is not yet visible (a filesystem race) it falls back
- * to the most-recent PNG, so the caller still gets a path to read.
+ * Resolves the screenshot the cart just took: `<shotDir>/<shotName>.png`. The
+ * cart's SHOT ACK is printed BEFORE `extcmd("screen")` lands on disk (verified
+ * on PICO-8 0.2.7), so poll briefly for that exact file. It deliberately never
+ * falls back to "the most recent PNG": that returned the PREVIOUS shot (or
+ * nothing) whenever the new file was still being written. `undefined` only if
+ * the file never appears within {@link SHOT_FILE_TIMEOUT_MS}.
  */
-function collectShot(shotDir: string, shotName: string): string | undefined {
+async function collectShot(
+	shotDir: string,
+	shotName: string,
+): Promise<string | undefined> {
 	const exact = join(shotDir, `${shotName}.png`);
-	if (existsSync(exact)) return exact;
-	try {
-		const pngs = readdirSync(shotDir)
-			.filter((f) => f.toLowerCase().endsWith('.png'))
-			.sort();
-		const last = pngs.at(-1);
-		return last !== undefined ? join(shotDir, last) : undefined;
-	} catch {
-		return undefined;
+	const deadline = Date.now() + SHOT_FILE_TIMEOUT_MS;
+	while (!existsSync(exact)) {
+		if (Date.now() >= deadline) return undefined;
+		await new Promise((r) => setTimeout(r, SHOT_FILE_POLL_MS));
 	}
+	return exact;
 }

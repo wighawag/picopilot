@@ -1,4 +1,10 @@
-import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
@@ -90,6 +96,31 @@ async function waitSocket(): Promise<void> {
 }
 
 describe('session daemon: verb round-trip over the socket (fake process)', () => {
+	it('shot waits for the PNG PICO-8 writes AFTER the ACK, and never returns an older shot', async () => {
+		// Real PICO-8 acks the SHOT (printh) before extcmd("screen") lands on disk.
+		const proc = new FakeDriven();
+		let n = 0;
+		const realWrite = proc.writeStdin.bind(proc);
+		proc.writeStdin = (bytes: Uint8Array) => {
+			realWrite(bytes);
+			if (bytes[0] === OPCODE.shot) {
+				const file = join(paths.shotDir, `play${n++}.png`);
+				setTimeout(() => writeFileSync(file, 'png'), 150);
+			}
+		};
+		startFakeDaemon(proc);
+		await waitSocket();
+		const client = new SessionClient(paths.socket);
+		const first = await client.send({verb: 'shot'});
+		expect(first.ok && first.value.screenshot).toBe(
+			join(paths.shotDir, 'play0.png'),
+		);
+		const second = await client.send({verb: 'shot'});
+		expect(second.ok && second.value.screenshot).toBe(
+			join(paths.shotDir, 'play1.png'),
+		);
+	});
+
 	it('step advances frames and returns the structured result', async () => {
 		startFakeDaemon(new FakeDriven());
 		await waitSocket();
