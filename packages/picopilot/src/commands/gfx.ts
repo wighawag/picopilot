@@ -20,16 +20,17 @@ import {
 	SHEET_RENDER_SCALE,
 	SPRITE_RENDER_SCALE,
 } from '../engine/gfx/index.js';
+import {type ShrinkoAdapter} from '../engine/shrinko/index.js';
 import {
-	type ShrinkoAdapter,
-	ShellShrinkoAdapter,
-} from '../engine/shrinko/index.js';
+	createShellShrinkoFactory,
+	type ShrinkoAdapterFactory,
+} from './shrinko-env.js';
 
 /** Injects the shrinko adapter `gfx import`/`gfx export` use (the spritesheet round-trip). */
-export type ShrinkoAdapterFactory = (env: NodeJS.ProcessEnv) => ShrinkoAdapter;
+export type {ShrinkoAdapterFactory} from './shrinko-env.js';
 
-const defaultShrinkoFactory: ShrinkoAdapterFactory = (env) =>
-	new ShellShrinkoAdapter({env});
+const defaultShrinkoFactory: ShrinkoAdapterFactory =
+	createShellShrinkoFactory();
 
 /**
  * The exit code for the `map-overlap` refusal. Chosen as 1 (a plain failure),

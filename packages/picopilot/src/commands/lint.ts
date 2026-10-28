@@ -1,16 +1,17 @@
 import {existsSync} from 'node:fs';
 import {isAbsolute, resolve} from 'node:path';
 import {type Cli, z} from 'incur';
+import {type ShrinkoAdapter} from '../engine/shrinko/index.js';
 import {
-	type ShrinkoAdapter,
-	ShellShrinkoAdapter,
-} from '../engine/shrinko/index.js';
+	createShellShrinkoFactory,
+	type ShrinkoAdapterFactory,
+} from './shrinko-env.js';
 
 /** See {@link import('./tokens.js').ShrinkoAdapterFactory}: lint reuses the same seam. */
-export type ShrinkoAdapterFactory = (env: NodeJS.ProcessEnv) => ShrinkoAdapter;
+export type {ShrinkoAdapterFactory} from './shrinko-env.js';
 
-const defaultAdapterFactory: ShrinkoAdapterFactory = (env) =>
-	new ShellShrinkoAdapter({env});
+const defaultAdapterFactory: ShrinkoAdapterFactory =
+	createShellShrinkoFactory();
 
 /**
  * Registers `picopilot lint` (US #4): surface PICO-8-specific issues (undefined

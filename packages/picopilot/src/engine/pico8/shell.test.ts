@@ -3,8 +3,10 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {DONE_SENTINEL, RECORD_WAV_BASENAME} from './adapter.js';
+import {FakeXvfb} from './fake-xvfb.test-support.js';
 import {
 	type Pico8Process,
+	pico8ChildEnv,
 	pico8HomeDir,
 	ShellPico8Adapter,
 	type SpawnRunner,
@@ -42,8 +44,11 @@ class FakeProcess implements Pico8Process {
 	writeStdin(bytes: Uint8Array): void {
 		for (const b of bytes) this.stdinBytes.push(b);
 	}
-	kill(): void {
+	/** The signals `kill` received (undefined = the default SIGKILL). */
+	signals: (string | undefined)[] = [];
+	kill(signal?: NodeJS.Signals): void {
 		this.killed = true;
+		this.signals.push(signal);
 	}
 
 	// Test drivers:
@@ -260,7 +265,11 @@ function writeNonEmptyWav(path: string): void {
 describe('ShellPico8Adapter.record: PICO-8 absent (the CI-testable boundary)', () => {
 	it('returns structured pico8-not-found when the binary ENOENTs', async () => {
 		const proc = new FakeProcess();
-		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const adapter = new ShellPico8Adapter({
+			env: {},
+			spawn: () => proc,
+			display: 'native',
+		});
 		const resultP = adapter.record({
 			cartPath: '/x/main.p8',
 			wavDir: '/x/wav',
@@ -269,8 +278,8 @@ describe('ShellPico8Adapter.record: PICO-8 absent (the CI-testable boundary)', (
 		proc.fail('ENOENT');
 		const result = await resultP;
 		expect(result.ok).toBe(false);
-		if (!result.ok) {
-			expect(result.reason).toBe('pico8-not-found');
+		expect(!result.ok && result.reason).toBe('pico8-not-found');
+		if (!result.ok && result.reason === 'pico8-not-found') {
 			expect(result.remedy).toBe('set PICO8_PATH or install PICO-8');
 			expect(result.needs).toContain('pico8');
 		}
@@ -291,7 +300,7 @@ describe('ShellPico8Adapter.record: real A/V session + WAV isolation', () => {
 			spawnArgs = args;
 			return proc;
 		};
-		const adapter = new ShellPico8Adapter({env: {}, spawn});
+		const adapter = new ShellPico8Adapter({env: {}, spawn, display: 'native'});
 		const resultP = adapter.record({
 			cartPath: '/x/harness.p8',
 			wavDir,
@@ -312,7 +321,11 @@ describe('ShellPico8Adapter.record: real A/V session + WAV isolation', () => {
 	it('collects the <basename>.wav the cooperating cart wrote (sentinel-ended)', async () => {
 		const proc = new FakeProcess();
 		writeNonEmptyWav(join(wavDir, `${RECORD_WAV_BASENAME}.wav`));
-		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const adapter = new ShellPico8Adapter({
+			env: {},
+			spawn: () => proc,
+			display: 'native',
+		});
 		const resultP = adapter.record({
 			cartPath: '/x/harness.p8',
 			wavDir,
@@ -334,7 +347,11 @@ describe('ShellPico8Adapter.record: real A/V session + WAV isolation', () => {
 		const proc = new FakeProcess();
 		// A well-formed but EMPTY RIFF header (what headless -x produces).
 		writeFileSync(join(wavDir, `${RECORD_WAV_BASENAME}.wav`), Buffer.alloc(44));
-		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const adapter = new ShellPico8Adapter({
+			env: {},
+			spawn: () => proc,
+			display: 'native',
+		});
 		const resultP = adapter.record({
 			cartPath: '/x/harness.p8',
 			wavDir,
@@ -347,7 +364,11 @@ describe('ShellPico8Adapter.record: real A/V session + WAV isolation', () => {
 
 	it('reports no WAV when none was produced', async () => {
 		const proc = new FakeProcess();
-		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const adapter = new ShellPico8Adapter({
+			env: {},
+			spawn: () => proc,
+			display: 'native',
+		});
 		const resultP = adapter.record({
 			cartPath: '/x/harness.p8',
 			wavDir,
@@ -360,7 +381,11 @@ describe('ShellPico8Adapter.record: real A/V session + WAV isolation', () => {
 
 	it('fires the record backstop when the cart never signals (never a hang)', async () => {
 		const proc = new FakeProcess();
-		const adapter = new ShellPico8Adapter({env: {}, spawn: () => proc});
+		const adapter = new ShellPico8Adapter({
+			env: {},
+			spawn: () => proc,
+			display: 'native',
+		});
 		const resultP = adapter.record({
 			cartPath: '/x/harness.p8',
 			wavDir,
@@ -579,5 +604,419 @@ describe('ShellPico8Adapter.export: the headless -export -x invocation', () => {
 			expect(result.value.jsPath).toBeUndefined();
 			expect(result.value.files.length).toBe(0);
 		}
+	});
+});
+
+/**
+ * The virtual-display record path (ADR-0017), with a fake PICO-8 AND a fake
+ * Xvfb: the display must come up before PICO-8 spawns, PICO-8 must see it, and
+ * it must ALWAYS be torn down, however the run ends.
+ */
+describe('ShellPico8Adapter.record: virtual display (fake Xvfb)', () => {
+	let wavDir: string;
+	beforeEach(() => {
+		wavDir = mkdtempSync(join(tmpdir(), 'pico8-wav-'));
+	});
+	afterEach(() => rmSync(wavDir, {recursive: true, force: true}));
+
+	/** Everything installed: pico8 and Xvfb resolve, Xvfb reports display :37. */
+	function rig(
+		opts: {
+			env?: NodeJS.ProcessEnv;
+			display?: 'auto' | 'xvfb' | 'native';
+			installed?: string[];
+			killGraceMs?: number;
+		} = {},
+	) {
+		const proc = new FakeProcess();
+		const xvfb = new FakeXvfb();
+		const installed = opts.installed ?? ['pico8', 'Xvfb'];
+		let xvfbSpawns = 0;
+		let spawnedEnv: NodeJS.ProcessEnv | undefined;
+		let spawnedFile: string | undefined;
+		let resolveSpawned: () => void = () => {};
+		const spawned = new Promise<void>((r) => {
+			resolveSpawned = r;
+		});
+		const adapter = new ShellPico8Adapter({
+			env: opts.env ?? {},
+			display: opts.display ?? 'auto',
+			killGraceMs: opts.killGraceMs,
+			spawn: (file, _args, env) => {
+				spawnedFile = file;
+				spawnedEnv = env;
+				setImmediate(resolveSpawned);
+				return proc;
+			},
+			virtualDisplay: {
+				find: (n) => (installed.includes(n) ? `/fake/${n}` : undefined),
+				spawnXvfb: () => {
+					xvfbSpawns++;
+					setImmediate(() => xvfb.reportDisplay(37));
+					return xvfb;
+				},
+			},
+		});
+		return {
+			proc,
+			xvfb,
+			adapter,
+			spawned,
+			get xvfbSpawns() {
+				return xvfbSpawns;
+			},
+			get env() {
+				return spawnedEnv;
+			},
+			get file() {
+				return spawnedFile;
+			},
+		};
+	}
+
+	it('runs PICO-8 on the virtual display (DISPLAY, dummy SDL audio, a runtime dir) and stops Xvfb on the sentinel', async () => {
+		const r = rig();
+		const resultP = r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		await r.spawned;
+		expect(r.env?.DISPLAY).toBe(':37');
+		expect(r.env?.SDL_AUDIODRIVER).toBe('dummy');
+		expect(r.env?.XDG_RUNTIME_DIR).toBeTruthy();
+		expect(r.xvfb.exited).toBe(false); // alive while PICO-8 runs
+		r.proc.emit(`${DONE_SENTINEL}\n`);
+		const result = await resultP;
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value.exitReason).toBe('sentinel');
+			expect(result.value.display).toBe('Xvfb');
+		}
+		expect(r.proc.killed).toBe(true);
+		expect(r.xvfb.exited).toBe(true);
+	});
+
+	it('keeps a caller-chosen SDL_AUDIODRIVER', async () => {
+		const r = rig({env: {SDL_AUDIODRIVER: 'pulseaudio'}});
+		const resultP = r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		await r.spawned;
+		expect(r.env?.SDL_AUDIODRIVER).toBe('pulseaudio');
+		r.proc.emit(`${DONE_SENTINEL}\n`);
+		await resultP;
+	});
+
+	it('stops Xvfb when the backstop fires', async () => {
+		const r = rig();
+		const result = await r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 20,
+		});
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.value.exitReason).toBe('timeout');
+		expect(r.proc.killed).toBe(true);
+		expect(r.xvfb.exited).toBe(true);
+	});
+
+	it('stops Xvfb when PICO-8 crashes (exits on its own)', async () => {
+		const r = rig();
+		const resultP = r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		await r.spawned;
+		r.proc.close(139);
+		const result = await resultP;
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.value.exitReason).toBe('exit');
+		expect(r.xvfb.exited).toBe(true);
+	});
+
+	it('stops Xvfb when PICO-8 fails to spawn', async () => {
+		const r = rig();
+		const resultP = r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		await r.spawned;
+		r.proc.fail('ENOENT');
+		const result = await resultP;
+		expect(!result.ok && result.reason).toBe('pico8-not-found');
+		expect(r.xvfb.exited).toBe(true);
+	});
+
+	it('wraps PICO-8 in xvfb-run when only the script exists, and ends it with SIGTERM first', async () => {
+		const r = rig({installed: ['pico8', 'xvfb-run'], killGraceMs: 5_000});
+		const resultP = r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		await r.spawned;
+		expect(r.file).toBe('/fake/xvfb-run');
+		expect(r.env?.SDL_AUDIODRIVER).toBe('dummy');
+		r.proc.emit(`${DONE_SENTINEL}\n`);
+		// SIGTERM (so Xvfb removes its lock + socket), and the run waits for the
+		// group to close instead of SIGKILLing it.
+		expect(r.proc.signals).toEqual(['SIGTERM']);
+		r.proc.close(0);
+		const result = await resultP;
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.value.display).toBe('xvfb-run');
+		expect(r.proc.signals).toEqual(['SIGTERM']);
+		expect(r.xvfbSpawns).toBe(0);
+	});
+
+	it('xvfb-run that ignores SIGTERM is SIGKILLed after the grace period', async () => {
+		const r = rig({installed: ['pico8', 'xvfb-run'], killGraceMs: 10});
+		const resultP = r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		await r.spawned;
+		r.proc.emit(`${DONE_SENTINEL}\n`);
+		const result = await resultP;
+		expect(result.ok).toBe(true);
+		expect(r.proc.signals).toEqual(['SIGTERM', undefined]);
+	});
+
+	it('returns display-unavailable (never a silent timeout) when there is no display and no Xvfb', async () => {
+		const r = rig({installed: ['pico8']});
+		const result = await r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok && result.reason === 'display-unavailable') {
+			expect(result.remedy).toMatch(/Xvfb/);
+		} else {
+			throw new Error(
+				`expected display-unavailable, got ${JSON.stringify(result)}`,
+			);
+		}
+		expect(r.env).toBeUndefined(); // PICO-8 never launched
+	});
+
+	it('reports pico8-not-found (not display-unavailable) when PICO-8 itself is missing', async () => {
+		const r = rig({installed: []});
+		const result = await r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		expect(!result.ok && result.reason).toBe('pico8-not-found');
+		expect(r.xvfbSpawns).toBe(0);
+	});
+
+	it('auto with a native display (X11 or Wayland) starts no Xvfb', async () => {
+		for (const env of [{DISPLAY: ':0'}, {WAYLAND_DISPLAY: 'wayland-0'}]) {
+			const r = rig({env});
+			const resultP = r.adapter.record({
+				cartPath: '/x/h.p8',
+				wavDir,
+				backstopMs: 9999,
+			});
+			await r.spawned;
+			r.proc.emit(`${DONE_SENTINEL}\n`);
+			const result = await resultP;
+			expect(result.ok).toBe(true);
+			if (result.ok) expect(result.value.display).toBe('native');
+			expect(r.xvfbSpawns).toBe(0);
+			expect(r.env?.SDL_AUDIODRIVER).toBeUndefined();
+		}
+	});
+
+	it('xvfb mode uses a virtual display even when a native one exists', async () => {
+		const r = rig({env: {DISPLAY: ':0'}, display: 'xvfb'});
+		const resultP = r.adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 9999,
+		});
+		await r.spawned;
+		expect(r.env?.DISPLAY).toBe(':37');
+		r.proc.emit(`${DONE_SENTINEL}\n`);
+		await resultP;
+		expect(r.xvfbSpawns).toBe(1);
+		expect(r.xvfb.exited).toBe(true);
+	});
+
+	it('the -x paths (run, drive, export) never start Xvfb, even in xvfb mode', async () => {
+		const r = rig({display: 'xvfb'});
+		const runP = r.adapter.run({
+			cartPath: '/x/c.p8',
+			shotDir: wavDir,
+			backstopMs: 9999,
+		});
+		r.proc.emit(`${DONE_SENTINEL}\n`);
+		await runP;
+		const driveP = r.adapter.drive({
+			cartPath: '/x/c.p8',
+			shotDir: wavDir,
+			blocks: new Uint8Array(),
+			backstopMs: 9999,
+		});
+		r.proc.emit(`${DONE_SENTINEL}\n`);
+		await driveP;
+		const exportP = r.adapter.export({
+			cartPath: '/x/c.p8',
+			outDir: wavDir,
+			backstopMs: 9999,
+		});
+		r.proc.close(0);
+		await exportP;
+		expect(r.xvfbSpawns).toBe(0);
+	});
+});
+
+describe('ShellPico8Adapter.record: says WHY there is no WAV', () => {
+	let wavDir: string;
+	beforeEach(() => {
+		wavDir = mkdtempSync(join(tmpdir(), 'pico8-wav-'));
+	});
+	afterEach(() => rmSync(wavDir, {recursive: true, force: true}));
+
+	it('backstop: names the missed sentinel and includes the tail of PICO-8 log.txt', async () => {
+		// A previous run's log must not leak into this report...
+		writeFileSync(join(pico8HomeDir(), 'log.txt'), 'STALE previous run\n');
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({
+			env: {},
+			spawn: () => {
+				// ...only what THIS run's PICO-8 writes.
+				writeFileSync(
+					join(pico8HomeDir(), 'log.txt'),
+					'codo_init\nsyntax error in main.lua\n',
+				);
+				return proc;
+			},
+			display: 'native',
+		});
+		const result = await adapter.record({
+			cartPath: '/x/h.p8',
+			wavDir,
+			backstopMs: 20,
+		});
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.value.wavPath).toBeUndefined();
+		expect(result.value.noWavReason).toMatch(/backstop/);
+		expect(result.value.noWavReason).toMatch(/sentinel/);
+		expect(result.value.pico8LogTail).toContain('syntax error in main.lua');
+		expect(result.value.pico8LogTail).not.toContain('STALE');
+	});
+
+	it('early exit and an empty capture each get their own reason', async () => {
+		const exitProc = new FakeProcess();
+		const a1 = new ShellPico8Adapter({
+			env: {},
+			spawn: () => exitProc,
+			display: 'native',
+		});
+		const p1 = a1.record({cartPath: '/x/h.p8', wavDir, backstopMs: 9999});
+		exitProc.close(1);
+		const r1 = await p1;
+		expect(r1.ok).toBe(true);
+		if (r1.ok) expect(r1.value.noWavReason).toMatch(/exited before/);
+
+		const doneProc = new FakeProcess();
+		const a2 = new ShellPico8Adapter({
+			env: {},
+			spawn: () => doneProc,
+			display: 'native',
+		});
+		const p2 = a2.record({cartPath: '/x/h.p8', wavDir, backstopMs: 9999});
+		doneProc.emit(`${DONE_SENTINEL}\n`);
+		const r2 = await p2;
+		expect(r2.ok).toBe(true);
+		if (r2.ok)
+			expect(r2.value.noWavReason).toMatch(/reached its done-sentinel/);
+	});
+
+	it('a captured WAV carries no reason', async () => {
+		writeNonEmptyWav(join(wavDir, `${RECORD_WAV_BASENAME}.wav`));
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({
+			env: {},
+			spawn: () => proc,
+			display: 'native',
+		});
+		const p = adapter.record({cartPath: '/x/h.p8', wavDir, backstopMs: 9999});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		const r = await p;
+		expect(r.ok).toBe(true);
+		if (r.ok) {
+			expect(r.value.noWavReason).toBeUndefined();
+			expect(r.value.pico8LogTail).toBeUndefined();
+		}
+	});
+});
+
+describe('pico8ChildEnv + the spawned env', () => {
+	it('passes the parent env through, overlaid with the resolved values', () => {
+		const env = pico8ChildEnv(
+			{PICO8_PATH: '/opt/pico8', PATH: undefined},
+			{
+				DISPLAY: ':1',
+				HOME: '/home/u',
+				XDG_RUNTIME_DIR: '/run/user/1',
+				PATH: '/usr/bin',
+			},
+		);
+		expect(env).toMatchObject({
+			DISPLAY: ':1',
+			HOME: '/home/u',
+			XDG_RUNTIME_DIR: '/run/user/1',
+			PICO8_PATH: '/opt/pico8',
+			PATH: '/usr/bin', // an undefined resolved value never erases the parent's
+		});
+	});
+
+	it('the spawn sees the env it was given, plus a private XDG_RUNTIME_DIR only when absent', async () => {
+		let seen: NodeJS.ProcessEnv | undefined;
+		const proc = new FakeProcess();
+		const adapter = new ShellPico8Adapter({
+			env: {DISPLAY: ':1', HOME: '/home/u'},
+			spawn: (_f, _a, env) => {
+				seen = env;
+				return proc;
+			},
+		});
+		const p = adapter.run({
+			cartPath: '/x/c.p8',
+			shotDir: '/x',
+			backstopMs: 9999,
+		});
+		proc.emit(`${DONE_SENTINEL}\n`);
+		await p;
+		expect(seen?.DISPLAY).toBe(':1');
+		expect(seen?.HOME).toBe('/home/u');
+		expect(seen?.XDG_RUNTIME_DIR).toMatch(/picopilot-xdg-runtime-/);
+
+		const proc2 = new FakeProcess();
+		const adapter2 = new ShellPico8Adapter({
+			env: {XDG_RUNTIME_DIR: '/run/user/1'},
+			spawn: (_f, _a, env) => {
+				seen = env;
+				return proc2;
+			},
+		});
+		const p2 = adapter2.run({
+			cartPath: '/x/c.p8',
+			shotDir: '/x',
+			backstopMs: 9999,
+		});
+		proc2.emit(`${DONE_SENTINEL}\n`);
+		await p2;
+		expect(seen?.XDG_RUNTIME_DIR).toBe('/run/user/1');
 	});
 });

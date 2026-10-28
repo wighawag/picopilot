@@ -21,13 +21,15 @@ picopilot is a single TypeScript tool (built on the [`incur`](https://www.npmjs.
 | `run` / `playtest` | Run a cart headless, capture screenshots, drive input. |
 | `audio` | Author sound and music as text (picopilot-MML). |
 | `export` / `serve` | Export to a playable HTML bundle and serve it in a browser. |
+| `doctor` | Report what this machine can do (PICO-8, shrinko8, display) and which commands are available. |
 
 Every command returns a structured, agent-friendly result (TOON output, Zod-validated schemas, and a `{code, message, retryable, cta}` error envelope), so the same tool drives a human at a terminal, an MCP client, and an autonomous agent loop.
 
 ## Requirements
 
 - **Node.js >= 22** and **pnpm** (this repo pins the version via `packageManager`).
-- **PICO-8** (a paid binary) is only hard-required by the commands that run a real console: `run`, `audio render`, `export`, and `serve`. Everything else works without it.
+- **PICO-8** (a paid binary) is only hard-required by the commands that run a real console: `run`, `playtest`, `audio render` / `audio record`, `export`, and `serve`. Everything else works without it.
+- **No display or sound card is needed.** Screenshots, playtests and exports run PICO-8 headless. Audio recording needs a real PICO-8 session, so on a machine without a display picopilot starts a private virtual display for it (needs [Xvfb](https://www.x.org/releases/current/doc/man/man1/Xvfb.1.xhtml), e.g. `apt install xvfb`); see `--display` and ADR-0017. Run `picopilot doctor` to see what a machine supports.
 - **[`shrinko8`](https://github.com/thisismypassport/shrinko8)** (`pip install shrinko`) powers token counting, linting, minification, and cart/PNG conversion. Shrinko-free commands work without it; shrinko-backed commands fail with a structured `shrinko-not-found` result when it is absent.
 
 ## Repository layout

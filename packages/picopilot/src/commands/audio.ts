@@ -14,21 +14,28 @@ import {
 	buildRenderHarness,
 	DONE_SENTINEL,
 	HarnessError,
-	type Pico8Adapter,
+	type Pico8RecordResult,
 	type RenderTarget,
-	ShellPico8Adapter,
 } from '../engine/pico8/index.js';
+import {makeReadInclude} from './cart-includes.js';
+import {
+	createShellAdapterFactory,
+	displayModeOf,
+	displayUnavailableError,
+	PICO8_ENV,
+	type Pico8AdapterFactory,
+	pico8NotFoundError,
+} from './pico8-env.js';
 
 /**
  * Injects the PICO-8 adapter the audio commands use (defaults to the shell
  * adapter over native `pico8 -run`). Mirrors `run`'s `Pico8AdapterFactory` seam:
  * a test passes a fake to drive the record orchestration + the absent path
- * WITHOUT the paid binary, and to isolate the child `env`.
+ * WITHOUT the paid binary.
  */
-export type Pico8AdapterFactory = (env: NodeJS.ProcessEnv) => Pico8Adapter;
+export type {Pico8AdapterFactory} from './pico8-env.js';
 
-const defaultAdapterFactory: Pico8AdapterFactory = (env) =>
-	new ShellPico8Adapter({env});
+const defaultAdapterFactory: Pico8AdapterFactory = createShellAdapterFactory();
 
 /**
  * The default record backstop: kill a capture that never signals after this many
@@ -39,7 +46,7 @@ const DEFAULT_BACKSTOP_MS = 30_000;
 
 /** The honest one-liner both `record` and `render` carry (ADR-0009): not offline. */
 const HONEST_CAVEAT =
-	'This is a REAL-TIME recording of playback (needs a real audio+video session, not headless), NOT a deterministic offline export.';
+	'This is a REAL-TIME recording of playback in a -run session, NOT a deterministic offline export. Works headless: with no display, picopilot runs the session on a private virtual display (ADR-0017, --display).';
 
 /** Resolves a path argument to an absolute path (relative to cwd). */
 function resolvePath(p: string): string {
@@ -64,14 +71,8 @@ function chooseWavDir(given: string | undefined): string {
 	return dir;
 }
 
-/** The env schema both audio subcommands share (locates the binary, in isolation). */
-const AUDIO_ENV = z.object({
-	PICO8_PATH: z
-		.string()
-		.optional()
-		.describe('Explicit path to the PICO-8 binary (else `pico8` on PATH).'),
-	PATH: z.string().optional().describe('Used to locate `pico8`.'),
-});
+/** The env schema both audio subcommands share (locates the binary). */
+const AUDIO_ENV = PICO8_ENV;
 
 /** The structured output shape shared by `record` and `render`. */
 const AUDIO_OUTPUT = z.object({
@@ -79,7 +80,7 @@ const AUDIO_OUTPUT = z.object({
 		.string()
 		.optional()
 		.describe(
-			'Absolute path of the recorded WAV, or omitted if no audio was captured (e.g. a headless session with no audio device).',
+			'Absolute path of the recorded WAV, or omitted if no audio was captured (see noAudioReason).',
 		),
 	captured: z
 		.boolean()
@@ -98,41 +99,60 @@ const AUDIO_OUTPUT = z.object({
 		.number()
 		.describe('The record window in seconds the capture ran for.'),
 	printh: z.string().describe('Captured stdout from the session.'),
+	display: z
+		.enum(['native', 'Xvfb', 'xvfb-run'])
+		.optional()
+		.describe(
+			'Which display the -run session used: native, or a private virtual display (Xvfb / xvfb-run).',
+		),
+	noAudioReason: z
+		.string()
+		.optional()
+		.describe(
+			'When no WAV was captured: why (backstop fired / PICO-8 exited before the done-sentinel / empty capture).',
+		),
+	pico8LogTail: z
+		.string()
+		.optional()
+		.describe(
+			"When no WAV was captured: the tail of PICO-8's own log.txt (load errors, SDL init failures).",
+		),
 });
 
-/** The message a `pico8-not-found` error carries (mirrors `run`): exact remedy + needs. */
-function pico8NotFoundMessage(notFound: {
-	remedy: string;
-	needs: readonly string[];
-}): string {
-	return `PICO-8 is not installed. ${notFound.remedy} (needs: ${notFound.needs.join(', ')})`;
-}
-
 /**
- * The advisory CTA when a record/render run captured NO audio (a headless /
- * no-audio-device session): the orchestration worked, there is just nothing to
- * hear (ADR-0009's live-tier caveat), so it is a nudge, not a hard error.
+ * The advisory CTA when a record/render run captured NO audio. The report's
+ * `noAudioReason` + `pico8LogTail` say why; this points at the next step.
  */
-function noAudioCta(caveat: string) {
+function noAudioCta(reason: string | undefined) {
 	return {
-		description: `No audio was captured (${caveat}) Recording needs a real audio+video session:`,
+		description: `No audio was captured${reason !== undefined ? ` (${reason})` : ''}. Next:`,
 		commands: [
 			{
-				command: 'audio render --sfx <n>',
+				command: 'verify',
 				description:
-					'Run on a developer machine with a display + audio device (not headless CI).',
+					'Run the static gate: a cart that fails to load or errors never reaches audio_end.',
+			},
+			{
+				command: 'doctor',
+				description: 'Check PICO-8 and display capabilities on this machine.',
 			},
 		],
 	};
 }
 
+/** Maps a failed record result onto the structured `error(...)` payload. */
+function recordFailure(
+	what: string,
+	result: Exclude<Pico8RecordResult, {ok: true}>,
+) {
+	return result.reason === 'display-unavailable'
+		? displayUnavailableError(what, result)
+		: pico8NotFoundError(result);
+}
+
 /** Shapes an adapter record report into the structured output object. */
 function recordOutput(
-	report: {
-		wavPath: string | undefined;
-		printh: string;
-		exitReason: 'sentinel' | 'timeout' | 'exit';
-	},
+	report: Extract<Pico8RecordResult, {ok: true}>['value'],
 	harness: {seconds: number; description: string},
 ) {
 	return {
@@ -142,6 +162,13 @@ function recordOutput(
 		target: harness.description,
 		seconds: harness.seconds,
 		printh: report.printh,
+		...(report.display !== undefined ? {display: report.display} : {}),
+		...(report.noWavReason !== undefined
+			? {noAudioReason: report.noWavReason}
+			: {}),
+		...(report.pico8LogTail !== undefined
+			? {pico8LogTail: report.pico8LogTail}
+			: {}),
 	};
 }
 
@@ -154,7 +181,7 @@ function recordOutput(
 function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 	const audio = Cli.create('audio', {
 		description:
-			'Get a WAV out of a cart by RECORDING a running session (ADR-0009). PICO-8 has no working offline WAV export, so both commands are REAL-TIME recordings that need a real audio+video session (not headless), NOT deterministic offline exports. Requires PICO-8.',
+			'Get a WAV out of a cart by RECORDING a running session (ADR-0009). PICO-8 has no working offline WAV export, so both commands are REAL-TIME recordings of a -run session, NOT deterministic offline exports. They work headless: with no display, picopilot runs the session on a private virtual display (ADR-0017). Requires PICO-8.',
 	});
 
 	// --- audio record <cart> ---------------------------------------------------
@@ -203,7 +230,7 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 				options: {seconds: 4},
 			},
 		],
-		async run({args, options, env, error, ok}) {
+		async run({args, options, env, error, ok, var: vars}) {
 			const cartPath = resolvePath(args.cart);
 			if (!existsSync(cartPath)) {
 				return error({
@@ -215,9 +242,12 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 
 			let harness: ReturnType<typeof buildRecordHarness>;
 			try {
+				// `#include`s are inlined against the SOURCE cart's folder: the harness
+				// runs from the isolated wavDir, where `main.lua` does not exist.
 				harness = buildRecordHarness(readFileSync(cartPath, 'utf8'), {
 					seconds: options.seconds,
 					sentinel: options.sentinel,
+					readInclude: makeReadInclude(cartPath),
 				});
 			} catch (e) {
 				if (e instanceof HarnessError) {
@@ -232,7 +262,9 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 			const harnessCart = join(wavDir, 'record-harness.p8');
 			writeFileSync(harnessCart, harness.cartText);
 
-			const adapter = adapterFactory(env as NodeJS.ProcessEnv);
+			const adapter = adapterFactory(env as NodeJS.ProcessEnv, {
+				display: displayModeOf(vars),
+			});
 			const result = await adapter.record({
 				cartPath: harnessCart,
 				wavDir,
@@ -241,18 +273,12 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 				backstopMs: options.backstopMs,
 			});
 
-			if (!result.ok) {
-				return error({
-					code: 'pico8-not-found',
-					message: pico8NotFoundMessage(result),
-					exitCode: 1,
-				});
-			}
+			if (!result.ok) return error(recordFailure('audio record', result));
 
 			const out = recordOutput(result.value, harness);
 			return ok(
 				out,
-				out.captured ? undefined : {cta: noAudioCta(HONEST_CAVEAT)},
+				out.captured ? undefined : {cta: noAudioCta(out.noAudioReason)},
 			);
 		},
 	});
@@ -324,7 +350,7 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 				options: {pattern: 2, seconds: 6},
 			},
 		],
-		async run({args, options, env, error, ok}) {
+		async run({args, options, env, error, ok, var: vars}) {
 			if (options.sfx !== undefined && options.pattern !== undefined) {
 				return error({
 					code: 'ambiguous-target',
@@ -368,7 +394,9 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 			const harnessCart = join(wavDir, 'render-harness.p8');
 			writeFileSync(harnessCart, harness.cartText);
 
-			const adapter = adapterFactory(env as NodeJS.ProcessEnv);
+			const adapter = adapterFactory(env as NodeJS.ProcessEnv, {
+				display: displayModeOf(vars),
+			});
 			const result = await adapter.record({
 				cartPath: harnessCart,
 				wavDir,
@@ -377,18 +405,12 @@ function buildAudioGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 				backstopMs: options.backstopMs,
 			});
 
-			if (!result.ok) {
-				return error({
-					code: 'pico8-not-found',
-					message: pico8NotFoundMessage(result),
-					exitCode: 1,
-				});
-			}
+			if (!result.ok) return error(recordFailure('audio render', result));
 
 			const out = recordOutput(result.value, harness);
 			return ok(
 				out,
-				out.captured ? undefined : {cta: noAudioCta(HONEST_CAVEAT)},
+				out.captured ? undefined : {cta: noAudioCta(out.noAudioReason)},
 			);
 		},
 	});

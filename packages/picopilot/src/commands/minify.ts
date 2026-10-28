@@ -1,16 +1,17 @@
 import {existsSync} from 'node:fs';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {type Cli, z} from 'incur';
+import {type ShrinkoAdapter} from '../engine/shrinko/index.js';
 import {
-	type ShrinkoAdapter,
-	ShellShrinkoAdapter,
-} from '../engine/shrinko/index.js';
+	createShellShrinkoFactory,
+	type ShrinkoAdapterFactory,
+} from './shrinko-env.js';
 
 /** See {@link import('./tokens.js').ShrinkoAdapterFactory}: minify reuses the same seam. */
-export type ShrinkoAdapterFactory = (env: NodeJS.ProcessEnv) => ShrinkoAdapter;
+export type {ShrinkoAdapterFactory} from './shrinko-env.js';
 
-const defaultAdapterFactory: ShrinkoAdapterFactory = (env) =>
-	new ShellShrinkoAdapter({env});
+const defaultAdapterFactory: ShrinkoAdapterFactory =
+	createShellShrinkoFactory();
 
 /**
  * Derives the default output path `<name>.min.p8` next to the source cart:

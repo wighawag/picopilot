@@ -13,8 +13,12 @@ import {
 	EXPORT_HTML_NAME,
 	type Pico8Adapter,
 	type Pico8ExportResult,
-	ShellPico8Adapter,
 } from '../engine/pico8/index.js';
+import {
+	createShellAdapterFactory,
+	PICO8_ENV,
+	type Pico8AdapterFactory,
+} from './pico8-env.js';
 import {prepareLabeledCart} from './label-cart.js';
 
 /**
@@ -22,10 +26,9 @@ import {prepareLabeledCart} from './label-cart.js';
  * seam as `export`/`run`: a test passes a stub so the export step needs no paid
  * binary, and the child `env` (`PICO8_PATH`/`PATH`) stays isolated.
  */
-export type Pico8AdapterFactory = (env: NodeJS.ProcessEnv) => Pico8Adapter;
+export type {Pico8AdapterFactory} from './pico8-env.js';
 
-const defaultAdapterFactory: Pico8AdapterFactory = (env) =>
-	new ShellPico8Adapter({env});
+const defaultAdapterFactory: Pico8AdapterFactory = createShellAdapterFactory();
 
 /**
  * Injects the HTTP-server factory `serve` binds. The default is a zero-dep
@@ -206,13 +209,7 @@ export function registerServe(
 					'Safety backstop for the export step (and the --label-frame capture run).',
 				),
 		}),
-		env: z.object({
-			PICO8_PATH: z
-				.string()
-				.optional()
-				.describe('Explicit path to the PICO-8 binary (else `pico8` on PATH).'),
-			PATH: z.string().optional().describe('Used to locate `pico8`.'),
-		}),
+		env: PICO8_ENV,
 		output: z.object({
 			url: z.string().describe('The local URL to open in a browser.'),
 			port: z.number().describe('The port the server bound to.'),

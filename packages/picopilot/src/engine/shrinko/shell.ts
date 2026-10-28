@@ -41,9 +41,9 @@ export type ChildRunner = (
  * The default {@link ChildRunner}: an `execFile` that captures stdout/stderr and
  * NEVER rejects. A failed spawn (ENOENT) becomes `spawnError`; a nonzero exit
  * becomes a `code`, so both outcomes are data the adapter maps to a structured
- * result. The child inherits ONLY the `env` it is handed (the command layer
- * passes the incur-resolved env, whose `PATH` a test can override) so there is
- * no ambient-environment leak.
+ * result. The child gets exactly the `env` it is handed and reads nothing
+ * ambiently; the command layer builds that env as the parent env overlaid with
+ * the resolved `PATH` (`commands/shrinko-env.ts`), and a test injects its own.
  */
 export const execFileRunner: ChildRunner = (file, args, env) =>
 	new Promise((resolve) => {

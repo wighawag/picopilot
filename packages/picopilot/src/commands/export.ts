@@ -6,20 +6,22 @@ import {
 	EXPORT_HTML_NAME,
 	type Pico8Adapter,
 	type Pico8ExportResult,
-	ShellPico8Adapter,
 } from '../engine/pico8/index.js';
+import {
+	createShellAdapterFactory,
+	PICO8_ENV,
+	type Pico8AdapterFactory,
+} from './pico8-env.js';
 import {prepareLabeledCart} from './label-cart.js';
 
 /**
  * Injects the PICO-8 adapter `export` uses (defaults to the shell adapter over
  * native `pico8 <cart> -export <name>.html -x`). Mirrors the `run` seam: a test
- * passes a stub to drive the present/absent paths without the paid binary, and
- * to isolate the child `env` (its `PICO8_PATH`/`PATH`).
+ * passes a stub to drive the present/absent paths without the paid binary, (the child env is the parent env + PICO8_PATH/PATH).
  */
-export type Pico8AdapterFactory = (env: NodeJS.ProcessEnv) => Pico8Adapter;
+export type {Pico8AdapterFactory} from './pico8-env.js';
 
-const defaultAdapterFactory: Pico8AdapterFactory = (env) =>
-	new ShellPico8Adapter({env});
+const defaultAdapterFactory: Pico8AdapterFactory = createShellAdapterFactory();
 
 /** The default backstop: kill an export that never completes/exits after this many ms. */
 const DEFAULT_BACKSTOP_MS = 30_000;
@@ -102,13 +104,7 @@ export function registerExport(
 		}),
 		// incur resolves these from the (test-overridable) env source and hands
 		// them to the child, so PICO8_PATH/PATH locate the binary in isolation.
-		env: z.object({
-			PICO8_PATH: z
-				.string()
-				.optional()
-				.describe('Explicit path to the PICO-8 binary (else `pico8` on PATH).'),
-			PATH: z.string().optional().describe('Used to locate `pico8`.'),
-		}),
+		env: PICO8_ENV,
 		output: z.object({
 			outDir: z
 				.string()

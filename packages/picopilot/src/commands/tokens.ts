@@ -5,16 +5,19 @@ import {type Cli, z} from 'incur';
 import {
 	type ShrinkoAdapter,
 	ShrinkoParseError,
-	ShellShrinkoAdapter,
 } from '../engine/shrinko/index.js';
+import {
+	createShellShrinkoFactory,
+	type ShrinkoAdapterFactory,
+} from './shrinko-env.js';
 
 /** PICO-8's Lua token budget. A cart over this will not load in PICO-8 (US #3). */
 export const TOKEN_BUDGET = 8192;
 
 /**
  * Builds the {@link ShrinkoAdapter} a command uses, given the incur-resolved
- * env. The default is the shell-out {@link ShellShrinkoAdapter}, whose child
- * process inherits ONLY this `env` (its `PATH` is the test isolation lever).
+ * env. The default is the shell-out `ShellShrinkoAdapter`, whose child process
+ * gets the parent env with this resolved `PATH` overlaid (see `shrinko-env.ts`).
  *
  * A test passes its own factory to {@link registerTokens} to SWAP a stub
  * adapter (the seam-swap contract): the command's public output/exit must be
@@ -22,10 +25,10 @@ export const TOKEN_BUDGET = 8192;
  * seam, because the command only ever talks to the {@link ShrinkoAdapter}
  * interface.
  */
-export type ShrinkoAdapterFactory = (env: NodeJS.ProcessEnv) => ShrinkoAdapter;
+export type {ShrinkoAdapterFactory} from './shrinko-env.js';
 
-const defaultAdapterFactory: ShrinkoAdapterFactory = (env) =>
-	new ShellShrinkoAdapter({env});
+const defaultAdapterFactory: ShrinkoAdapterFactory =
+	createShellShrinkoFactory();
 
 /**
  * Registers `picopilot tokens` (US #3), the first shrinko-backed command.

@@ -22,12 +22,16 @@ import {
 	SessionRegistry,
 	sessionExists,
 	SHOT_BASENAME,
-	ShellPico8Adapter,
 	spawnSessionDaemon,
 	type SessionRequest,
 	type SessionResponse,
 	type SessionResponseValue,
 } from '../engine/pico8/index.js';
+import {
+	createShellAdapterFactory,
+	PICO8_ENV,
+	type Pico8AdapterFactory,
+} from './pico8-env.js';
 import {makeReadInclude} from './cart-includes.js';
 
 /**
@@ -36,10 +40,9 @@ import {makeReadInclude} from './cart-includes.js';
  * stub to drive the drive-orchestration + the absent path WITHOUT the paid
  * binary, and to isolate the child `env` (its `PICO8_PATH`/`PATH`).
  */
-export type Pico8AdapterFactory = (env: NodeJS.ProcessEnv) => Pico8Adapter;
+export type {Pico8AdapterFactory} from './pico8-env.js';
 
-const defaultAdapterFactory: Pico8AdapterFactory = (env) =>
-	new ShellPico8Adapter({env});
+const defaultAdapterFactory: Pico8AdapterFactory = createShellAdapterFactory();
 
 /**
  * The default backstop: kill a driven cart that never signals/exits after this
@@ -219,13 +222,7 @@ function buildPlaytestGroup(adapterFactory: Pico8AdapterFactory): Cli.Cli {
 }
 
 /** The env schema the whole `playtest` group shares (locates the binary, isolated). */
-const PLAYTEST_ENV = z.object({
-	PICO8_PATH: z
-		.string()
-		.optional()
-		.describe('Explicit path to the PICO-8 binary (else `pico8` on PATH).'),
-	PATH: z.string().optional().describe('Used to locate `pico8`.'),
-});
+const PLAYTEST_ENV = PICO8_ENV;
 
 /**
  * The ONE-SHOT root handler (unchanged behaviour from the one-shot task): build

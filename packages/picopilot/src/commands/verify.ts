@@ -6,8 +6,11 @@ import {Cart, CartParseError} from '../engine/cart/index.js';
 import {
 	type ShrinkoAdapter,
 	ShrinkoParseError,
-	ShellShrinkoAdapter,
 } from '../engine/shrinko/index.js';
+import {
+	createShellShrinkoFactory,
+	type ShrinkoAdapterFactory,
+} from './shrinko-env.js';
 import {TOKEN_BUDGET} from './tokens.js';
 
 /**
@@ -29,10 +32,10 @@ export const VERIFY_SCOPE =
 export const GATE_INCAPABLE_EXIT = 2;
 
 /** See {@link ShrinkoAdapterFactory} in `tokens.ts` — verify reuses the same seam. */
-export type ShrinkoAdapterFactory = (env: NodeJS.ProcessEnv) => ShrinkoAdapter;
+export type {ShrinkoAdapterFactory} from './shrinko-env.js';
 
-const defaultAdapterFactory: ShrinkoAdapterFactory = (env) =>
-	new ShellShrinkoAdapter({env});
+const defaultAdapterFactory: ShrinkoAdapterFactory =
+	createShellShrinkoFactory();
 
 /**
  * The result of the integrity check: the cart parses AND round-trips

@@ -1,6 +1,6 @@
 ---
 name: picopilot-overview
-description: Start here for any PICO-8 cart built with picopilot. The #include discipline (edit main.lua, never the .p8 binary sections), the per-iteration verify loop, and which deeper skill to load for code, art, audio, or debugging. Use when you open a picopilot cart folder or run picopilot init.
+description: Start here for any PICO-8 cart built with picopilot. Call picopilot doctor first to learn what this machine can do (everything works headless), then the #include discipline (edit main.lua, never the .p8 binary sections), the per-iteration verify loop, and which deeper skill to load for code, art, audio, or debugging. Use when you open a picopilot cart folder or run picopilot init.
 ---
 
 # picopilot overview
@@ -12,6 +12,14 @@ acceptance gate, so you can build a PICO-8 game and self-correct.
 
 Load this skill first. Then load the group skill for whatever you are doing:
 `picopilot-code`, `picopilot-art`, `picopilot-audio`, or `picopilot-debug`.
+
+## First on a new machine: `picopilot doctor`
+
+Run `picopilot doctor` before anything else on a machine you have not used yet. It reports what THIS machine can do: whether PICO-8 is found and actually runs (with its version), whether shrinko8 is found, how a PICO-8 audio session would get a display, and the resulting `available` / `unavailable` command lists (each unavailable command says what it is missing). Plan from that list instead of discovering limits by failing.
+
+Every picopilot command works on a machine with no display and no sound card (a server, CI, an agent sandbox). Screenshots, `playtest` and `export` run PICO-8 headless. Audio recording (`audio render`, `audio record`, `run --record-audio`) needs a real PICO-8 session with a window, and picopilot provides one by itself: with the default display mode `auto`, when there is no display it starts a private virtual display for that recording and removes it afterwards. You do not need to set anything up. Only if `doctor` lists the audio commands as unavailable with `missing: display` (or a recording fails with `display-unavailable`) does the machine lack Xvfb; the error names the install command to suggest to the human.
+
+The display mode can be forced with `--display xvfb` (always virtual) or `--display native` (use the current display as-is), also settable as `PICOPILOT_DISPLAY` or `"display"` in `picopilot.json` (when picopilot runs as an MCP server, only `PICOPILOT_DISPLAY` in the server's environment applies). Leave it at `auto` unless a human asks otherwise.
 
 ## The #include discipline (how every picopilot cart is laid out)
 

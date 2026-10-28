@@ -6,10 +6,13 @@
  * - `adapter`:  the `Pico8Adapter` interface, `Pico8Result`, the structured
  *               `pico8-not-found` value, and the run-report shapes.
  * - `sentinel`: the pure sentinel-watch core (CI-testable without the binary).
+ * - `display`:  the display mode (auto/xvfb/native) + the private virtual
+ *               display a `-run` session uses on a display-less box (ADR-0017).
  * - `shell`:    the v1 adapter shelling out to native `pico8 -x`, with an
  *               injectable spawn seam for isolation-testing.
  */
 export * from './adapter.js';
+export * from './display.js';
 export * from './drive.js';
 export * from './harness.js';
 export * from './sentinel.js';

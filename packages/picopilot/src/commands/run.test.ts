@@ -1,5 +1,11 @@
 import {execFileSync} from 'node:child_process';
-import {existsSync, mkdtempSync, readdirSync, writeFileSync} from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import {homedir, tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Cli} from 'incur';
@@ -11,7 +17,8 @@ import type {
 	RecordOptions,
 	RunOptions,
 } from '../engine/pico8/index.js';
-import {pico8NotFound} from '../engine/pico8/index.js';
+import {displayUnavailable, pico8NotFound} from '../engine/pico8/index.js';
+import {createShellAdapterFactory} from './pico8-env.js';
 import {type Pico8AdapterFactory, registerRun} from './run.js';
 
 /** A trivial valid cart the command reads (existence + a path to hand the adapter). */
@@ -266,5 +273,106 @@ describe('picopilot run: cart-not-found (picopilot-side error, distinct from pic
 		const before = snap();
 		await runRun(() => stubAdapter(ranWith('sentinel')));
 		expect(snap()).toEqual(before); // same entries: an absent dir stays absent, a present one unchanged
+	});
+});
+
+describe('picopilot run --record-audio: an #include cart produces a loadable harness', () => {
+	it('inlines the cart includes into the harness it hands the record pass', async () => {
+		writeFileSync(
+			cartPath,
+			'pico-8 cartridge // http://www.pico-8.com\nversion 42\n__lua__\n#include main.lua\n',
+		);
+		writeFileSync(
+			join(dir, 'main.lua'),
+			'function _update() hello_from_main=1 end\n',
+		);
+		const seen: {recordOptions?: RecordOptions} = {};
+		const {exitCode} = await runRun(
+			() => stubAdapter(ranWith('sentinel'), seen),
+			['run', cartPath, '--record-audio', '--json'],
+		);
+		expect(exitCode).toBe(0);
+		const harness = readFileSync(seen.recordOptions!.cartPath, 'utf8');
+		expect(harness).not.toMatch(/#include/);
+		expect(harness).toContain('hello_from_main=1');
+	});
+});
+
+describe('picopilot run --record-audio: failures are explained, never silent', () => {
+	it('surfaces noAudioReason + pico8LogTail when no WAV was captured', async () => {
+		const {stdout} = await runRun(
+			() =>
+				stubAdapter(ranWith('sentinel'), undefined, {
+					ok: true,
+					value: {
+						wavPath: undefined,
+						printh: '',
+						exitReason: 'timeout',
+						noWavReason: 'the backstop fired before the done-sentinel',
+						pico8LogTail: 'syntax error',
+					},
+				}),
+			['run', cartPath, '--record-audio', '--json'],
+		);
+		const out = JSON.parse(stdout);
+		expect(out.audioCaptured).toBe(false);
+		expect(out.noAudioReason).toMatch(/backstop/);
+		expect(out.pico8LogTail).toBe('syntax error');
+	});
+
+	it('display-unavailable is a structured error whose CTA names the fix', async () => {
+		const {stdout, exitCode} = await runRun(
+			() =>
+				stubAdapter(
+					ranWith('sentinel'),
+					undefined,
+					displayUnavailable('no DISPLAY and no Xvfb'),
+				),
+			['run', cartPath, '--record-audio', '--json', '--full-output'],
+		);
+		expect(exitCode).not.toBe(0);
+		const out = JSON.parse(stdout);
+		expect(out.error.code).toBe('display-unavailable');
+		expect(out.error.message).toMatch(/Xvfb/);
+		expect(JSON.stringify(out.meta?.cta ?? out.cta)).toMatch(/install Xvfb/);
+	});
+});
+
+describe('picopilot run: the PICO-8 child inherits the parent environment', () => {
+	it('DISPLAY, HOME and XDG_RUNTIME_DIR from the parent reach the spawn; PICO8_PATH comes from the resolved env', async () => {
+		let spawnedEnv: NodeJS.ProcessEnv | undefined;
+		const factory = createShellAdapterFactory({
+			parentEnv: {
+				DISPLAY: ':5',
+				HOME: '/home/agent',
+				XDG_RUNTIME_DIR: '/run/user/1000',
+				SDL_AUDIODRIVER: 'pulseaudio',
+				PICO8_PATH: '/parent/pico8',
+			},
+			spawn: (_file, _args, env) => {
+				spawnedEnv = env;
+				return {
+					onStdout(cb) {
+						setImmediate(() => cb('__PICOPILOT_DONE__\n'));
+					},
+					onClose() {},
+					onError() {},
+					kill() {},
+				};
+			},
+		});
+		const {exitCode} = await runRun(factory, ['run', cartPath, '--json'], {
+			PICO8_PATH: '/resolved/pico8',
+			PATH: '/usr/bin',
+		});
+		expect(exitCode).toBe(0);
+		expect(spawnedEnv).toMatchObject({
+			DISPLAY: ':5',
+			HOME: '/home/agent',
+			XDG_RUNTIME_DIR: '/run/user/1000',
+			SDL_AUDIODRIVER: 'pulseaudio',
+			PICO8_PATH: '/resolved/pico8',
+			PATH: '/usr/bin',
+		});
 	});
 });

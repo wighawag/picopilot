@@ -4,6 +4,8 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
+	rmSync,
 	statSync,
 } from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -21,8 +23,19 @@ import {
 	type Pico8Result,
 	RECORD_WAV_BASENAME,
 	type RecordOptions,
+	type RecordReport,
 	type RunOptions,
 } from './adapter.js';
+import {
+	DEFAULT_DISPLAY_MODE,
+	type DisplayMode,
+	findExecutable,
+	needsVirtualDisplay,
+	startVirtualDisplay,
+	type VirtualDisplayDeps,
+} from './display.js';
+import {overlayEnv} from '../child-env.js';
+import {killOnAbort} from './cleanup.js';
 import {SentinelWatcher} from './sentinel.js';
 
 /**
@@ -30,13 +43,15 @@ import {SentinelWatcher} from './sentinel.js';
  * delivers stdout chunks (both `stdout` and `stderr` folded in, since PICO-8's
  * `printh` and its own lines can land on either); `onClose` fires when the
  * process exits on its own; `onError` fires on a spawn failure (ENOENT ⇒ PICO-8
- * absent). `kill` terminates the process tree (the backstop / sentinel kill).
+ * absent). `kill` terminates the process tree (the backstop / sentinel kill),
+ * with SIGKILL unless a gentler `signal` is given (the `xvfb-run` fallback is
+ * first sent SIGTERM so Xvfb can remove its lock file and socket).
  */
 export interface Pico8Process {
 	onStdout(cb: (chunk: string) => void): void;
 	onClose(cb: (code: number | null) => void): void;
 	onError(cb: (err: NodeJS.ErrnoException) => void): void;
-	kill(): void;
+	kill(signal?: NodeJS.Signals): void;
 	/**
 	 * Writes raw bytes to the process's stdin, for the `drive` transport (the
 	 * fixed-size command blocks). Absent/undefined when stdin was detached
@@ -95,6 +110,76 @@ export function withPico8Home(args: string[]): string[] {
 	return ['-home', home, ...args];
 }
 
+/**
+ * The environment PICO-8 is spawned with: the parent env overlaid with the
+ * picopilot-resolved values ({@link overlayEnv}). A `-run` session cannot open a
+ * window or an audio device without DISPLAY, HOME, XDG_RUNTIME_DIR, SDL_*, ...
+ */
+export function pico8ChildEnv(
+	resolved: Readonly<Record<string, string | undefined>>,
+	parent: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+	return overlayEnv(resolved, parent);
+}
+
+/**
+ * A private `XDG_RUNTIME_DIR` (mode 0700, one per picopilot process) for a
+ * PICO-8 launched without one. SDL logs "XDG_RUNTIME_DIR is invalid or not set"
+ * otherwise, which is noise in every headless report.
+ */
+let cachedRuntimeDir: string | undefined;
+export function pico8RuntimeDir(): string {
+	if (cachedRuntimeDir !== undefined && existsSync(cachedRuntimeDir)) {
+		return cachedRuntimeDir;
+	}
+	cachedRuntimeDir = mkdtempSync(join(tmpdir(), 'picopilot-xdg-runtime-'));
+	return cachedRuntimeDir;
+}
+
+/** `env` with a private {@link pico8RuntimeDir} filled in when XDG_RUNTIME_DIR is absent. */
+export function withRuntimeDir(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const current = env.XDG_RUNTIME_DIR;
+	if (current !== undefined && current.trim() !== '') return env;
+	return {...env, XDG_RUNTIME_DIR: pico8RuntimeDir()};
+}
+
+/** How many lines of PICO-8's `log.txt` a failed record reports. */
+const LOG_TAIL_LINES = 25;
+
+/** The last lines of PICO-8's `log.txt` in the isolated `-home`, or undefined if absent. */
+export function readPico8LogTail(
+	home: string = pico8HomeDir(),
+	lines: number = LOG_TAIL_LINES,
+): string | undefined {
+	try {
+		const text = readFileSync(join(home, 'log.txt'), 'utf8');
+		const all = text.trimEnd().split('\n');
+		return all.slice(-lines).join('\n');
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Says WHY a record run produced no WAV, from how it ended. The sentinel is the
+ * harness's last act (after `audio_end`), so anything other than a sentinel
+ * means the harness never finished; a sentinel with no WAV means `audio_end`
+ * saved nothing usable.
+ */
+export function explainNoWav(
+	exitReason: ExitReason,
+	ctx: {backstopMs: number; wavDir: string; basename: string},
+): string {
+	switch (exitReason) {
+		case 'timeout':
+			return `the backstop fired after ${ctx.backstopMs}ms before the record harness printed its done-sentinel: the cart never reached audio_end (it failed to load, errored at runtime, or its game loop never ran). See pico8LogTail and printh.`;
+		case 'exit':
+			return 'PICO-8 exited before the record harness printed its done-sentinel: the cart failed to load or crashed, or PICO-8 itself could not start (e.g. no display or audio device). See pico8LogTail and printh.';
+		case 'sentinel':
+			return `the record harness reached its done-sentinel but no non-empty ${ctx.basename}.wav was written to ${ctx.wavDir}: audio_end saved nothing usable (an empty 0-frame capture).`;
+	}
+}
+
 export const spawnRunner: SpawnRunner = (file, args, env, options) => {
 	// `drive` pipes fixed-size command blocks to stdin; `run`/`record` detach it so
 	// the cart never blocks on console input.
@@ -124,12 +209,12 @@ export const spawnRunner: SpawnRunner = (file, args, env, options) => {
 				// A closed stdin (the cart exited) is not fatal to the run.
 			}
 		},
-		kill() {
+		kill(signal = 'SIGKILL') {
 			try {
 				// Negative pid kills the process GROUP (detached), so any child dies too.
-				if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
+				if (child.pid !== undefined) process.kill(-child.pid, signal);
 			} catch {
-				child.kill('SIGKILL'); // fall back to killing just the process
+				child.kill(signal); // fall back to killing just the process
 			}
 		},
 	};
@@ -202,7 +287,23 @@ export interface ShellPico8Options {
 	readonly env: NodeJS.ProcessEnv;
 	/** The spawn runner (defaults to {@link spawnRunner}); tests inject a fake. */
 	readonly spawn?: SpawnRunner;
+	/**
+	 * The display mode for `-run` sessions (ADR-0017; defaults to `auto`). Only
+	 * {@link ShellPico8Adapter.record} consults it: the `-x` paths never need a
+	 * display and never start one.
+	 */
+	readonly display?: DisplayMode;
+	/** The virtual-display dependencies (Xvfb lookup + spawn); tests inject fakes. */
+	readonly virtualDisplay?: VirtualDisplayDeps;
+	/**
+	 * How long a gracefully-ended run (the `xvfb-run` fallback) gets between
+	 * SIGTERM and SIGKILL, in ms (default {@link DEFAULT_KILL_GRACE_MS}).
+	 */
+	readonly killGraceMs?: number;
 }
+
+/** The default SIGTERM-to-SIGKILL grace for a gracefully-ended run. */
+export const DEFAULT_KILL_GRACE_MS = 2_000;
 
 /**
  * The v1 {@link Pico8Adapter}: shells out to the user's native `pico8 -x`
@@ -217,10 +318,16 @@ export interface ShellPico8Options {
 export class ShellPico8Adapter implements Pico8Adapter {
 	private readonly env: NodeJS.ProcessEnv;
 	private readonly spawnRun: SpawnRunner;
+	private readonly display: DisplayMode;
+	private readonly virtualDisplay: VirtualDisplayDeps;
+	private readonly killGraceMs: number;
 
 	constructor(options: ShellPico8Options) {
+		this.killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
 		this.env = options.env;
 		this.spawnRun = options.spawn ?? spawnRunner;
+		this.display = options.display ?? DEFAULT_DISPLAY_MODE;
+		this.virtualDisplay = options.virtualDisplay ?? {};
 	}
 
 	run(options: RunOptions): Promise<Pico8Result> {
@@ -322,24 +429,95 @@ export class ShellPico8Adapter implements Pico8Adapter {
 	}
 
 	record(options: RecordOptions): Promise<Pico8RecordResult> {
+		if (needsVirtualDisplay(this.display, this.env)) {
+			return this.recordOnVirtualDisplay(options);
+		}
+		return this.recordWith(options, 'native');
+	}
+
+	/**
+	 * The record session on a private virtual display (ADR-0017): start Xvfb
+	 * (or fall back to `xvfb-run`), run PICO-8 on it with a dummy SDL audio
+	 * driver (unless the caller chose one; `audio_rec` captures PICO-8's own
+	 * mixer, not the device), and ALWAYS stop the display afterwards, however
+	 * the run ended (sentinel, backstop, crash, spawn failure).
+	 */
+	private async recordOnVirtualDisplay(
+		options: RecordOptions,
+	): Promise<Pico8RecordResult> {
+		const [file] = pico8Candidates(this.env) as [string, ...string[]];
+		// Absent PICO-8 is reported as such BEFORE paying for (or failing on) a
+		// display, and wrapped in xvfb-run a missing binary would not ENOENT.
+		const find = this.virtualDisplay.find ?? findExecutable;
+		if (find(file, this.env) === undefined) return pico8NotFound();
+
+		const started = await startVirtualDisplay(this.env, this.virtualDisplay);
+		if (!started.ok) return started;
+		const vd = started.display;
+		try {
+			const env: NodeJS.ProcessEnv = {...this.env, ...vd.env};
+			const audioDriver = env.SDL_AUDIODRIVER;
+			if (audioDriver === undefined || audioDriver.trim() === '') {
+				env.SDL_AUDIODRIVER = 'dummy';
+			}
+			return await this.recordWith(options, vd.backend, {
+				env,
+				wrap: (f, a) => vd.wrap(f, a),
+				// xvfb-run's Xvfb lives in PICO-8's process group: SIGTERM first so it
+				// removes its /tmp/.X<n>-lock and socket (a SIGKILL leaves them behind).
+				endGracefully: vd.backend === 'xvfb-run',
+			});
+		} finally {
+			await vd.stop();
+		}
+	}
+
+	/** The record launch itself, natively or under a virtual display's env/wrapper. */
+	private recordWith(
+		options: RecordOptions,
+		display: RecordReport['display'],
+		launch?: {
+			env: NodeJS.ProcessEnv;
+			wrap: (file: string, args: string[]) => {file: string; args: string[]};
+			endGracefully?: boolean;
+		},
+	): Promise<Pico8RecordResult> {
 		const [file] = pico8Candidates(this.env) as [string, ...string[]];
 		const basename = options.wavBasename ?? RECORD_WAV_BASENAME;
 		// `-root_path <wavDir>` steers the `audio_end(1)`-to-current-folder WAV into
 		// the isolated temp dir (never ~/Desktop or the carts root). `-run` is a real
 		// A/V session (recording needs audio to capture; `-x` yields an empty WAV).
 		const args = ['-root_path', options.wavDir, '-run', options.cartPath];
+		// The `-home` is shared by every launch in this process: drop the previous
+		// log.txt so a failed record never reports another run's log as its own.
+		rmSync(join(pico8HomeDir(), 'log.txt'), {force: true});
 		return this.orchestrate<Pico8RecordResult>(
 			file,
 			args,
 			{sentinel: options.sentinel, backstopMs: options.backstopMs},
-			(exitReason, printh) => ({
-				ok: true,
-				value: {
-					wavPath: collectWav(options.wavDir, basename),
-					printh,
-					exitReason,
-				},
-			}),
+			(exitReason, printh) => {
+				const wavPath = collectWav(options.wavDir, basename);
+				if (wavPath !== undefined) {
+					return {ok: true, value: {wavPath, printh, exitReason, display}};
+				}
+				const pico8LogTail = readPico8LogTail();
+				return {
+					ok: true,
+					value: {
+						wavPath,
+						printh,
+						exitReason,
+						display,
+						noWavReason: explainNoWav(exitReason, {
+							backstopMs: options.backstopMs,
+							wavDir: options.wavDir,
+							basename,
+						}),
+						...(pico8LogTail !== undefined ? {pico8LogTail} : {}),
+					},
+				};
+			},
+			launch,
 		);
 	}
 
@@ -356,22 +534,72 @@ export class ShellPico8Adapter implements Pico8Adapter {
 		args: string[],
 		opts: {sentinel?: string; backstopMs: number},
 		buildOk: (exitReason: ExitReason, printh: string) => R,
-		spawnOpts?: {stdin?: boolean; onSpawn?: (proc: Pico8Process) => void},
+		spawnOpts?: {
+			stdin?: boolean;
+			onSpawn?: (proc: Pico8Process) => void;
+			/** The child env (defaults to the adapter's); a virtual display adds DISPLAY etc. */
+			env?: NodeJS.ProcessEnv;
+			/** Rewrites the launch (the `xvfb-run` fallback wraps the PICO-8 command). */
+			wrap?: (file: string, args: string[]) => {file: string; args: string[]};
+			/**
+			 * End the run with SIGTERM, then SIGKILL after the grace period, and wait
+			 * for the process to close before resolving (default: an immediate SIGKILL).
+			 */
+			endGracefully?: boolean;
+		},
 	): Promise<R | ReturnType<typeof pico8NotFound>> {
 		const watcher = new SentinelWatcher(opts.sentinel);
 
 		return new Promise<R | ReturnType<typeof pico8NotFound>>((resolve) => {
 			let settled = false;
 			let backstop: NodeJS.Timeout | undefined;
-			const proc = this.spawnRun(file, withPico8Home(args), this.env, {
-				stdin: spawnOpts?.stdin,
-			});
+			const homeArgs = withPico8Home(args);
+			const launch =
+				spawnOpts?.wrap !== undefined
+					? spawnOpts.wrap(file, homeArgs)
+					: {file, args: homeArgs};
+			const proc = this.spawnRun(
+				launch.file,
+				launch.args,
+				withRuntimeDir(spawnOpts?.env ?? this.env),
+				{stdin: spawnOpts?.stdin},
+			);
 
-			const finish = (exitReason: ExitReason): void => {
+			// If picopilot itself is stopped mid-run, take PICO-8 down with it.
+			const disposeAbort = killOnAbort(() => proc.kill());
+			let onClosed: (() => void) | undefined;
+
+			/**
+			 * Ends the run once. `kill` = PICO-8 is still running (sentinel/backstop):
+			 * SIGKILL its group, or for a graceful end SIGTERM it and resolve when it
+			 * has closed (SIGKILL after the grace period).
+			 */
+			const finish = (exitReason: ExitReason, kill = false): void => {
 				if (settled) return;
 				settled = true;
 				if (backstop !== undefined) clearTimeout(backstop);
-				resolve(buildOk(exitReason, watcher.text));
+				let resolved = false;
+				const done = () => {
+					if (resolved) return;
+					resolved = true;
+					// Only now: a signal during the graceful wait must still kill PICO-8.
+					disposeAbort();
+					resolve(buildOk(exitReason, watcher.text));
+				};
+				if (!kill) return done();
+				if (spawnOpts?.endGracefully !== true) {
+					proc.kill();
+					return done();
+				}
+				proc.kill('SIGTERM');
+				const hard = setTimeout(() => {
+					proc.kill();
+					done();
+				}, this.killGraceMs);
+				onClosed = () => {
+					clearTimeout(hard);
+					done();
+				};
 			};
 
 			proc.onError((err) => {
@@ -381,6 +609,7 @@ export class ShellPico8Adapter implements Pico8Adapter {
 				if (settled) return;
 				if (err.code === 'ENOENT') {
 					settled = true;
+					disposeAbort();
 					if (backstop !== undefined) clearTimeout(backstop);
 					resolve(pico8NotFound());
 				} else {
@@ -389,13 +618,14 @@ export class ShellPico8Adapter implements Pico8Adapter {
 			});
 
 			proc.onStdout((chunk) => {
-				if (watcher.push(chunk) && !settled) {
-					proc.kill(); // sentinel matched: end the run promptly
-					finish('sentinel');
-				}
+				// sentinel matched: end the run promptly
+				if (watcher.push(chunk) && !settled) finish('sentinel', true);
 			});
 
-			proc.onClose(() => finish('exit')); // PICO-8 exited on its own
+			proc.onClose(() => {
+				if (onClosed !== undefined) return onClosed();
+				finish('exit'); // PICO-8 exited on its own
+			});
 
 			// For `drive`: write the command blocks to the live stdin now that it is
 			// spawned. A spawn ENOENT resolves via onError before this matters.
@@ -404,8 +634,7 @@ export class ShellPico8Adapter implements Pico8Adapter {
 			// Backstop: a cart that neither signals nor exits gets killed.
 			backstop = setTimeout(() => {
 				if (settled) return;
-				proc.kill();
-				finish('timeout');
+				finish('timeout', true);
 			}, opts.backstopMs);
 		});
 	}

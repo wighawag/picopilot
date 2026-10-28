@@ -12,6 +12,8 @@
  * a normal, well-signposted boundary (US #14, #19), mirroring shrinko-not-found.
  */
 
+import type {DisplayUnavailable, VirtualDisplayBackend} from './display.js';
+
 /** The remedy string in a pico8-not-found result: how the user makes `run` work. */
 export const PICO8_REMEDY = 'set PICO8_PATH or install PICO-8' as const;
 
@@ -75,6 +77,23 @@ export interface RecordReport {
 	readonly wavPath: string | undefined;
 	readonly printh: string;
 	readonly exitReason: ExitReason;
+	/**
+	 * Which display the `-run` session used (ADR-0017): `native` (the caller's
+	 * own DISPLAY/WAYLAND_DISPLAY, or none) or a private virtual display (`Xvfb`
+	 * spawned directly, or the `xvfb-run` fallback). Omitted by fakes.
+	 */
+	readonly display?: 'native' | VirtualDisplayBackend;
+	/**
+	 * Set only when `wavPath` is undefined: WHY no WAV was captured (the backstop
+	 * fired before the done-sentinel, PICO-8 exited early, or the sentinel was
+	 * reached but the WAV was missing/empty), so a silent failure always says why.
+	 */
+	readonly noWavReason?: string;
+	/**
+	 * Set only when `wavPath` is undefined: the tail of PICO-8's own `log.txt`
+	 * from the isolated `-home` (load errors, SDL/audio init failures).
+	 */
+	readonly pico8LogTail?: string;
 }
 
 /** A successful audio-record call carrying the {@link RecordReport}. */
@@ -132,7 +151,8 @@ export interface DriveOptions {
  * The result {@link Pico8Adapter.record} returns: a {@link RecordReport} or the
  * structured {@link Pico8NotFound} (PICO-8 absent), mirroring {@link Pico8Result}.
  */
-export type Pico8RecordResult = Pico8RecordOk | Pico8NotFound;
+export type Pico8RecordResult =
+	Pico8RecordOk | Pico8NotFound | DisplayUnavailable;
 
 /**
  * Options for a single {@link Pico8Adapter.record} (ADR-0009). The recorded cart
@@ -256,8 +276,10 @@ export interface Pico8Adapter {
 	 * `-x`, which mixes no audio and yields an empty WAV, ADR-0009), streams
 	 * stdout, ends on the sentinel (backstop as the net), and collects the WAV the
 	 * cooperating cart wrote via `audio_rec`/`audio_end(1)`. Returns
-	 * {@link Pico8NotFound} when PICO-8 is not installed. Live capture is a
-	 * manual/opt-in tier; CI drives a fake runner + the absent boundary.
+	 * {@link Pico8NotFound} when PICO-8 is not installed, and
+	 * {@link DisplayUnavailable} when the session needs a display, there is none,
+	 * and no Xvfb is installed to provide a virtual one (ADR-0017). CI drives a
+	 * fake runner + fake Xvfb; a live capture needs the paid binary.
 	 */
 	record(options: RecordOptions): Promise<Pico8RecordResult>;
 

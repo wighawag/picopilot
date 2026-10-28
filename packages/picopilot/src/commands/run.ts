@@ -12,20 +12,25 @@ import {
 	buildRecordHarness,
 	DONE_SENTINEL,
 	HarnessError,
-	type Pico8Adapter,
-	ShellPico8Adapter,
 } from '../engine/pico8/index.js';
+import {makeReadInclude} from './cart-includes.js';
+import {
+	createShellAdapterFactory,
+	displayModeOf,
+	displayUnavailableError,
+	PICO8_ENV,
+	pico8NotFoundError,
+	type Pico8AdapterFactory,
+} from './pico8-env.js';
 
 /**
  * Injects the PICO-8 adapter `run` uses (defaults to the shell adapter over
  * native `pico8 -x`). Mirrors the shrinko `adapterFactory` seam: a test passes a
- * stub to drive the sentinel/backstop/absent paths without the paid binary, and
- * to isolate the child `env` (its `PICO8_PATH`/`PATH`).
+ * stub to drive the sentinel/backstop/absent paths without the paid binary.
  */
-export type Pico8AdapterFactory = (env: NodeJS.ProcessEnv) => Pico8Adapter;
+export type {Pico8AdapterFactory} from './pico8-env.js';
 
-const defaultAdapterFactory: Pico8AdapterFactory = (env) =>
-	new ShellPico8Adapter({env});
+const defaultAdapterFactory: Pico8AdapterFactory = createShellAdapterFactory();
 
 /** The default backstop: kill a cart that never signals/exits after this many ms. */
 const DEFAULT_BACKSTOP_MS = 15_000;
@@ -95,18 +100,12 @@ export function registerRun(
 				.boolean()
 				.default(false)
 				.describe(
-					"Also capture a WAV of the run's audio alongside the screenshots (ADR-0009). A REAL-TIME recording that needs a real audio+video session (a separate -run pass, NOT the headless screenshot pass), never an offline export.",
+					"Also capture a WAV of the run's audio alongside the screenshots (ADR-0009). A REAL-TIME recording in a separate -run pass (not the headless screenshot pass), never an offline export. Works headless: with no display, picopilot runs that pass on a private virtual display (ADR-0017, --display).",
 				),
 		}),
-		// incur resolves these from the (test-overridable) env source and hands
-		// them to the child, so PICO8_PATH/PATH locate the binary in isolation.
-		env: z.object({
-			PICO8_PATH: z
-				.string()
-				.optional()
-				.describe('Explicit path to the PICO-8 binary (else `pico8` on PATH).'),
-			PATH: z.string().optional().describe('Used to locate `pico8`.'),
-		}),
+		// incur resolves these from the (test-overridable) env source; the child
+		// gets the parent env with them overlaid (DISPLAY, HOME, ... pass through).
+		env: PICO8_ENV,
 		output: z.object({
 			screenshots: z
 				.array(z.string())
@@ -131,6 +130,24 @@ export function registerRun(
 				.describe(
 					'Whether a non-empty WAV was captured (false unless --record-audio ran and produced audio).',
 				),
+			audioDisplay: z
+				.enum(['native', 'Xvfb', 'xvfb-run'])
+				.optional()
+				.describe(
+					'With --record-audio: which display the -run pass used (native, or a private virtual display).',
+				),
+			noAudioReason: z
+				.string()
+				.optional()
+				.describe(
+					'With --record-audio and no WAV: why (backstop fired / PICO-8 exited before the done-sentinel / empty capture).',
+				),
+			pico8LogTail: z
+				.string()
+				.optional()
+				.describe(
+					"With --record-audio and no WAV: the tail of PICO-8's own log.txt (load errors, SDL init failures).",
+				),
 		}),
 		examples: [
 			{description: 'Run main.p8'},
@@ -141,7 +158,7 @@ export function registerRun(
 				options: {shotDir: './shots'},
 			},
 		],
-		async run({args, options, env, error, ok}) {
+		async run({args, options, env, error, ok, var: vars}) {
 			const cartPath = isAbsolute(args.cart)
 				? args.cart
 				: resolve(process.cwd(), args.cart);
@@ -166,7 +183,9 @@ export function registerRun(
 					: mkdtempSync(join(tmpdir(), 'picopilot-run-'));
 			if (!existsSync(shotDir)) mkdirSync(shotDir, {recursive: true});
 
-			const adapter = adapterFactory(env as NodeJS.ProcessEnv);
+			const adapter = adapterFactory(env as NodeJS.ProcessEnv, {
+				display: displayModeOf(vars),
+			});
 			const result = await adapter.run({
 				cartPath,
 				shotDir,
@@ -194,10 +213,16 @@ export function registerRun(
 			// uses. The WAV lands in the isolated shotDir alongside the screenshots.
 			let wav: string | undefined;
 			let audioCaptured = false;
+			let noAudioReason: string | undefined;
+			let pico8LogTail: string | undefined;
+			let audioDisplay: 'native' | 'Xvfb' | 'xvfb-run' | undefined;
 			if (options.recordAudio) {
 				try {
+					// `#include`s are inlined (resolved against the SOURCE cart's folder):
+					// the harness runs from shotDir, where `main.lua` does not exist.
 					const harness = buildRecordHarness(readFileSync(cartPath, 'utf8'), {
 						sentinel: options.sentinel,
+						readInclude: makeReadInclude(cartPath),
 					});
 					const harnessCart = join(shotDir, 'record-audio-harness.p8');
 					writeFileSync(harnessCart, harness.cartText);
@@ -208,16 +233,26 @@ export function registerRun(
 						sentinel: options.sentinel,
 						backstopMs: options.backstopMs,
 					});
-					if (rec.ok) {
-						wav = rec.value.wavPath;
-						audioCaptured = rec.value.wavPath !== undefined;
+					if (!rec.ok) {
+						// pico8-not-found is impossible here (the screenshot pass above would
+						// have returned it); display-unavailable is the real case: the -run
+						// pass needs a display, there is none, and no Xvfb to make one.
+						return error(
+							rec.reason === 'display-unavailable'
+								? displayUnavailableError('run --record-audio', rec)
+								: pico8NotFoundError(rec),
+						);
 					}
-					// A record-pass pico8-not-found is impossible here: the screenshot
-					// pass above already returned pico8-not-found if PICO-8 were absent.
+					wav = rec.value.wavPath;
+					audioCaptured = rec.value.wavPath !== undefined;
+					noAudioReason = rec.value.noWavReason;
+					pico8LogTail = rec.value.pico8LogTail;
+					audioDisplay = rec.value.display;
 				} catch (e) {
 					if (!(e instanceof HarnessError)) throw e;
 					// A harness-build failure (unparseable cart) leaves audioCaptured false;
 					// the screenshot run's report still stands.
+					noAudioReason = `the record harness could not be built: ${e.message}`;
 				}
 			}
 
@@ -277,6 +312,9 @@ export function registerRun(
 					shotDir,
 					wav,
 					audioCaptured,
+					...(audioDisplay !== undefined ? {audioDisplay} : {}),
+					...(noAudioReason !== undefined ? {noAudioReason} : {}),
+					...(pico8LogTail !== undefined ? {pico8LogTail} : {}),
 				},
 				cta === undefined ? undefined : {cta},
 			);

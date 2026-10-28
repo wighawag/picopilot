@@ -179,3 +179,29 @@ describe('buildRecordHarness', () => {
 		}
 	});
 });
+
+describe('buildRecordHarness: #include carts (the `picopilot init` scaffold)', () => {
+	const scaffold = `${HEADER}__lua__\n#include main.lua\n`;
+	const mainLua = 'function _update() x=1 end\nfunction _draw() cls() end\n';
+
+	it('inlines `#include main.lua` so the harness loads from any folder', () => {
+		const h = buildRecordHarness(scaffold, {
+			readInclude: (p) => (p === 'main.lua' ? mainLua : undefined),
+		});
+		const lua = Cart.parse(h.cartText).getSection('lua') ?? '';
+		// No directive is left for PICO-8 to resolve relative to the harness.
+		expect(lua).not.toMatch(/#include/);
+		expect(lua).toContain('function _update() x=1 end');
+		// The recorder still wraps the (now inlined) cart _update.
+		expect(lua.indexOf('x=1')).toBeLessThan(
+			lua.indexOf('__pp_rec_update=_update'),
+		);
+	});
+
+	it('without a resolver the directive is left as-is (the old, broken-in-a-temp-dir behaviour)', () => {
+		const h = buildRecordHarness(scaffold);
+		expect(Cart.parse(h.cartText).getSection('lua')).toContain(
+			'#include main.lua',
+		);
+	});
+});

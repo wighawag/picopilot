@@ -449,11 +449,34 @@ export function resolveIncludes(
 			if (m === null) return line;
 			const path = m[1] as string;
 			if (seen.has(path)) return line; // cycle guard: leave it
-			const content = readInclude(path);
-			if (content === undefined) return line; // unreadable: leave verbatim
+			// `#include other.p8` takes that cart's code, `other.p8:n` only tab n.
+			const p8 = /^(.+\.p8)(?::(\d+))?$/i.exec(path);
+			const raw = readInclude(p8 !== null ? (p8[1] as string) : path);
+			if (raw === undefined) return line; // unreadable: leave verbatim
+			const content = p8 !== null ? p8Code(raw, p8[2]) : raw;
+			if (content === undefined) return line;
 			return resolveIncludes(content, readInclude, new Set([...seen, path]));
 		})
 		.join('\n');
+}
+
+/**
+ * The code an `#include` of a `.p8` cart pulls in: its `__lua__` section, or
+ * only tab `tab` (tabs are separated by `-->8` lines). `undefined` when the
+ * text does not parse as a cart or the tab does not exist.
+ */
+function p8Code(cartText: string, tab: string | undefined): string | undefined {
+	let lua: string | undefined;
+	try {
+		lua = Cart.parse(cartText).getSection('lua');
+	} catch {
+		return undefined;
+	}
+	if (lua === undefined) return undefined;
+	const body = lua.replace(/\n$/, '');
+	if (tab === undefined) return body;
+	const tabs = body.split(/\r?\n-->8\r?\n/);
+	return tabs[Number(tab)];
 }
 
 /** The default base filename SHOT names each screenshot (`play0.png`, ...). */

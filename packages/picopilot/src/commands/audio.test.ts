@@ -19,7 +19,7 @@ import type {
 	RecordOptions,
 	RunOptions,
 } from '../engine/pico8/index.js';
-import {pico8NotFound} from '../engine/pico8/index.js';
+import {displayUnavailable, pico8NotFound} from '../engine/pico8/index.js';
 import {type Pico8AdapterFactory, registerAudio} from './audio.js';
 
 const HEADER = 'pico-8 cartridge // http://www.pico-8.com\nversion 42\n';
@@ -288,5 +288,68 @@ describe('audio: honest help text (record-based, NOT an offline export)', () => 
 		expect(lower).toContain('real-time');
 		expect(lower).toContain('not');
 		expect(lower).toContain('offline export');
+	});
+});
+
+describe('audio record/render: headless (ADR-0017)', () => {
+	it('record inlines `#include main.lua` so the harness loads from the temp wavDir', async () => {
+		writeFileSync(cartPath, `${HEADER}__lua__\n#include main.lua\n`);
+		writeFileSync(
+			join(dir, 'main.lua'),
+			'function _update() from_main=1 end\n',
+		);
+		const seen: {record?: RecordOptions} = {};
+		await runAudio(
+			() => stubAdapter(recorded(undefined), seen),
+			['audio', 'record', cartPath, '--json'],
+		);
+		const harness = readFileSync(seen.record!.cartPath, 'utf8');
+		expect(harness).not.toMatch(/#include/);
+		expect(harness).toContain('from_main=1');
+	});
+
+	for (const sub of [
+		['audio', 'record'],
+		['audio', 'render', '--sfx', '0'],
+	]) {
+		it(`${sub.join(' ')}: display-unavailable is a structured error naming the fix`, async () => {
+			const {stdout, exitCode} = await runAudio(
+				() => stubAdapter(displayUnavailable('no display, no Xvfb')),
+				[
+					...sub.slice(0, 2),
+					cartPath,
+					...sub.slice(2),
+					'--json',
+					'--full-output',
+				],
+			);
+			expect(exitCode).not.toBe(0);
+			const out = JSON.parse(stdout);
+			expect(out.error.code).toBe('display-unavailable');
+			expect(out.meta.cta.description).toMatch(/install Xvfb/);
+		});
+	}
+
+	it('a run with no WAV reports noAudioReason, pico8LogTail and the display used', async () => {
+		const {stdout} = await runAudio(
+			() =>
+				stubAdapter({
+					ok: true,
+					value: {
+						wavPath: undefined,
+						printh: '',
+						exitReason: 'timeout',
+						display: 'Xvfb',
+						noWavReason: 'the backstop fired',
+						pico8LogTail: 'could not include main.lua',
+					},
+				}),
+			['audio', 'record', cartPath, '--json'],
+		);
+		const out = JSON.parse(stdout);
+		expect(out.captured).toBe(false);
+		expect(out.display).toBe('Xvfb');
+		expect(out.noAudioReason).toBe('the backstop fired');
+		expect(out.pico8LogTail).toContain('main.lua');
 	});
 });

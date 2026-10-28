@@ -20,6 +20,7 @@ import {
 	RECORD_WAV_BASENAME,
 } from './adapter.js';
 import {SFX_ROW_LENGTH} from '../audio/sfx.js';
+import {resolveIncludes} from './drive.js';
 
 /**
  * A render target: a single SFX slot, a single music PATTERN, or the whole song
@@ -301,11 +302,23 @@ export function buildRenderHarness(
  * calls the original. This is the record analogue of the debug skill's "add
  * capture lines, run, revert" recipe, done on a THROWAWAY copy.
  *
+ * The harness runs from a different folder than the source cart (an isolated
+ * temp dir), so a relative `#include main.lua` (picopilot's standard scaffold)
+ * would not resolve there and the harness would fail to load. Pass
+ * `readInclude` (bound to the SOURCE cart's folder, see `makeReadInclude`) and
+ * every `#include` is inlined, exactly as the playtest drive transform does, so
+ * the harness is self-contained wherever it runs.
+ *
  * @throws {HarnessError} an unparseable cart.
  */
 export function buildRecordHarness(
 	cartText: string,
-	options: {seconds?: number; sentinel?: string; wavBasename?: string} = {},
+	options: {
+		seconds?: number;
+		sentinel?: string;
+		wavBasename?: string;
+		readInclude?: (includePath: string) => string | undefined;
+	} = {},
 ): RenderHarness {
 	let cart: Cart;
 	try {
@@ -322,7 +335,10 @@ export function buildRecordHarness(
 	const sentinel = options.sentinel ?? DONE_SENTINEL;
 	const wavBasename = options.wavBasename ?? RECORD_WAV_BASENAME;
 
-	const existing = cart.getSection('lua') ?? '';
+	const existing = resolveIncludes(
+		cart.getSection('lua') ?? '',
+		options.readInclude,
+	);
 	// Append the recorder AFTER the cart's own code. It wraps _update so it works
 	// whether or not the cart defines one, and never edits the cart's own logic.
 	const recorder = [

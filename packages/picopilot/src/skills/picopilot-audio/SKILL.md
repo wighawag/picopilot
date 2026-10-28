@@ -46,11 +46,7 @@ These steps are wired as CTAs (a merged SFX or song points you at `verify` then
 
 ## `audio render` / `audio record`: get a WAV by RECORDING (ADR-0009)
 
-PICO-8 has NO working offline WAV export (it SIGFPEs upstream), so picopilot gets
-audio-to-WAV the only way that works: by RECORDING a running session
-(`extcmd("audio_rec")`/`audio_end`). Two commands, both PICO-8-gated and both
-REAL-TIME recordings that need a real audio+video session (a developer machine,
-NOT headless CI), NOT deterministic offline exports:
+PICO-8 has NO working offline WAV export (it SIGFPEs upstream), so picopilot gets audio-to-WAV the only way that works: by RECORDING a running session (`extcmd("audio_rec")`/`audio_end`). Two commands, both PICO-8-gated and both REAL-TIME recordings of playback, NOT deterministic offline exports. They work headless (no display, no sound card): PICO-8 records its own mixer, not the audio device, and when there is no display picopilot runs the session on a private virtual display by itself (ADR-0017). You do not need to do anything for that.
 
 - **`picopilot audio render`** injects a THROWAWAY play-harness for a chosen
   target and records it, so you write NO playback code. Pick the target with
@@ -68,9 +64,9 @@ The WAV goes to an isolated dir (`--wav-dir`, default a temp dir), never
 `~/Desktop` or the carts root (the `audio_end(1)`-saves-to-the-current-folder
 trap; picopilot steers it with PICO-8's `root_path`). PICO-8 absent -> a
 structured `pico8-not-found` (remedy `set PICO8_PATH or install PICO-8`), never a
-crash. On a headless machine the recording succeeds but captures NO audio
-(`captured:false` + a nudge to run on a machine with a display + audio device):
-that is honest, not a failure of the recipe.
+crash.
+
+When a recording produces no WAV (`captured:false`), the result says why: `noAudioReason` (the backstop fired before the recorder finished, PICO-8 exited early, or the capture was empty) and `pico8LogTail` (the end of PICO-8's own log, where load errors show up). Read both before retrying; a cart that fails to load never reaches the end of the recording, so run `picopilot verify` on it. If the machine has no display AND no Xvfb, the command fails up front with `display-unavailable`, whose message names the package to install; `picopilot doctor` reports the same thing before you try.
 
 ## `sfx from-mml`: one MML string -> one SFX slot
 

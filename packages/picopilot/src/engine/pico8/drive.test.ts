@@ -290,6 +290,26 @@ describe('resolveIncludes (#include inlining so the driven cart is self-containe
 		);
 	});
 
+	it('includes only the __lua__ of a .p8 file, or one tab of it with :n', () => {
+		const cart = [
+			'pico-8 cartridge // http://www.pico-8.com',
+			'version 42',
+			'__lua__',
+			'tab0=1',
+			'-->8',
+			'tab1=1',
+			'__gfx__',
+			'0000',
+			'',
+		].join('\n');
+		const read = (p: string) => (p === 'lib.p8' ? cart : undefined);
+		expect(resolveIncludes('#include lib.p8', read)).toBe(
+			'tab0=1\n-->8\ntab1=1',
+		);
+		expect(resolveIncludes('#include lib.p8:1', read)).toBe('tab1=1');
+		expect(resolveIncludes('#include lib.p8:0', read)).toBe('tab0=1');
+	});
+
 	it('guards against an include cycle (leaves the repeat verbatim)', () => {
 		const files: Record<string, string> = {'a.lua': '#include a.lua'};
 		// Does not infinite-loop; the self-reference is left as-is.
