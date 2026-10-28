@@ -13,11 +13,14 @@ import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {encodePng} from '../engine/gfx/index.js';
 import {PICO8_PALETTE} from '../engine/gfx/index.js';
 import type {
+	DriveCommand,
+	DriveOptions,
 	ExportOptions,
 	Pico8Adapter,
+	Pico8DriveResult,
 	Pico8ExportResult,
 } from '../engine/pico8/index.js';
-import {pico8NotFound} from '../engine/pico8/index.js';
+import {BlockDecoder, pico8NotFound} from '../engine/pico8/index.js';
 import {type Pico8AdapterFactory, registerExport} from './export.js';
 
 /** A trivial valid cart the command reads (existence + a path to hand the adapter). */
@@ -362,7 +365,7 @@ describe('picopilot export: labelless cart + failure paths', () => {
 		expect(exitCode).toBe(0);
 		const out = JSON.parse(stdout);
 		expect(out.labelWarning).toBe(true);
-		expect(stdout.toLowerCase()).toContain('label');
+		expect(stdout).toContain('--label-frame 0');
 	});
 
 	it('errors when PICO-8 produced no js payload (labelless bail)', async () => {
@@ -371,7 +374,7 @@ describe('picopilot export: labelless cart + failure paths', () => {
 			['export', cartPath, join(dir, 'out'), '--json'],
 		);
 		expect(exitCode).not.toBe(0);
-		expect(stdout.toLowerCase()).toContain('label');
+		expect(stdout).toContain('--label-frame 0');
 	});
 });
 
@@ -392,5 +395,240 @@ describe('picopilot export: cart-not-found (picopilot-side error, distinct from 
 			return stubAdapter('writes-bundle');
 		}, ['export', join(dir, 'missing.p8'), '--json']);
 		expect(called).toBe(false);
+	});
+});
+
+/** The real PICO-8 384x384 screenshot fixture: red (8) top-left, blue (12) bottom-right, dark blue (1) bg. */
+const SHOT_FIXTURE = new URL(
+	'../engine/gfx/fixtures/pico8-screenshot-384.png',
+	import.meta.url,
+);
+
+/**
+ * Wraps {@link stubAdapter} with a `drive` that plays the label-frame capture:
+ * records the {@link DriveOptions} and the driven cart text, then (by default)
+ * writes the screenshot fixture into `shotDir` as PICO-8 would and reports it.
+ * Also records the cart text handed to `export`.
+ */
+function frameAdapter(
+	seen: {
+		drive?: DriveOptions;
+		drivenCart?: string;
+		exportedCart?: string;
+		exportCalled?: boolean;
+	},
+	driveResult: 'captures' | Pico8DriveResult = 'captures',
+	labelWarning = false,
+): Pico8Adapter {
+	const inner = stubAdapter('writes-bundle', undefined, labelWarning);
+	return {
+		...inner,
+		async drive(o: DriveOptions): Promise<Pico8DriveResult> {
+			seen.drive = o;
+			seen.drivenCart = readFileSync(o.cartPath, 'utf8');
+			if (driveResult !== 'captures') return driveResult;
+			const shot = join(o.shotDir, 'label0.png');
+			writeFileSync(shot, readFileSync(SHOT_FIXTURE));
+			return {
+				ok: true,
+				value: {screenshots: [shot], printh: '', exitReason: 'sentinel'},
+			};
+		},
+		async export(o: ExportOptions) {
+			seen.exportCalled = true;
+			seen.exportedCart = readFileSync(o.cartPath, 'utf8');
+			return inner.export(o);
+		},
+	};
+}
+
+/** Decodes the command blocks a drive call was handed. */
+function decodeScript(blocks: Uint8Array): DriveCommand[] {
+	return new BlockDecoder().push(blocks);
+}
+
+describe('picopilot export: --label-frame (capture the label from the game itself)', () => {
+	it('advances N frames with NO input, shoots once, and bakes that frame in as the label', async () => {
+		const seen: Parameters<typeof frameAdapter>[0] = {};
+		const {stdout, exitCode} = await runExport(
+			() => frameAdapter(seen),
+			['export', cartPath, join(dir, 'out'), '--label-frame', '5', '--json'],
+		);
+		expect(exitCode).toBe(0);
+		// The script: 6 single-frame steps (frames 0..5), a SHOT after the 6th,
+		// then QUIT; the only input is "nothing held".
+		const script = decodeScript(seen.drive!.blocks);
+		expect(script.filter((c) => c.op === 'step').length).toBe(6);
+		expect(script.filter((c) => c.op === 'shot').length).toBe(1);
+		const shotAt = script.findIndex((c) => c.op === 'shot');
+		expect(script.slice(0, shotAt).filter((c) => c.op === 'step').length).toBe(
+			6,
+		);
+		expect(
+			script
+				.filter((c) => c.op === 'input')
+				.every((c) => c.op === 'input' && c.held === 0),
+		).toBe(true);
+		expect(script[script.length - 1]!.op).toBe('quit');
+		// The exported cart carries the captured frame as its label.
+		const label = seen.exportedCart!.split('__label__\n')[1]!.split('\n');
+		expect(label[10]![10]).toBe('8');
+		expect(label[100]![100]).toBe('c');
+		expect(label[100]![10]).toBe('1');
+		expect(JSON.parse(stdout).labelSource).toBe('frame');
+		// The user's cart is untouched and no temp files are left beside it.
+		expect(readFileSync(cartPath, 'utf8')).not.toContain('__label__');
+		expect(readdirSync(dir).filter((f) => f.startsWith('.'))).toEqual([]);
+		// The capture dir (PICO-8's -desktop) is removed after reading the frame.
+		expect(existsSync(seen.drive!.shotDir)).toBe(false);
+	});
+
+	it('--label-frame 0 shoots right after the first step (the first drawn frame)', async () => {
+		const seen: Parameters<typeof frameAdapter>[0] = {};
+		await runExport(
+			() => frameAdapter(seen),
+			['export', cartPath, join(dir, 'out'), '--label-frame', '0', '--json'],
+		);
+		const ops = decodeScript(seen.drive!.blocks).map((c) => c.op);
+		expect(ops).toEqual(['input', 'step', 'shot', 'quit']);
+	});
+
+	it("inlines the cart's #include so the throwaway driven cart is self-contained", async () => {
+		writeFileSync(join(dir, 'main.lua'), 'function _draw() cls(9) end\n');
+		writeFileSync(
+			cartPath,
+			'pico-8 cartridge // http://www.pico-8.com\nversion 42\n__lua__\n#include main.lua\n',
+		);
+		const seen: Parameters<typeof frameAdapter>[0] = {};
+		await runExport(
+			() => frameAdapter(seen),
+			['export', cartPath, join(dir, 'out'), '--label-frame', '3', '--json'],
+		);
+		expect(seen.drivenCart).toContain('cls(9)');
+		// The driven cart is NOT the one exported: the export copy keeps the include.
+		expect(seen.exportedCart).toContain('#include main.lua');
+		expect(seen.exportedCart).not.toContain('serial(');
+	});
+
+	it("does not run the cart when it already has a label (the cart's label wins)", async () => {
+		const labeled = join(dir, 'labeled.p8');
+		writeFileSync(labeled, `${CART_TEXT}__label__\n${'0'.repeat(128)}\n`);
+		const seen: Parameters<typeof frameAdapter>[0] = {};
+		const {stdout, exitCode} = await runExport(
+			() => frameAdapter(seen),
+			['export', labeled, join(dir, 'out'), '--label-frame', '5', '--json'],
+		);
+		expect(exitCode).toBe(0);
+		expect(seen.drive).toBeUndefined();
+		expect(JSON.parse(stdout).labelSource).toBe('cart');
+	});
+
+	it('rejects --label together with --label-frame, before running anything', async () => {
+		const labelFile = join(dir, 'label.png');
+		writeFileSync(labelFile, labelPng());
+		const seen: Parameters<typeof frameAdapter>[0] = {};
+		const {stdout, exitCode} = await runExport(
+			() => frameAdapter(seen),
+			[
+				'export',
+				cartPath,
+				join(dir, 'out'),
+				'--label',
+				labelFile,
+				'--label-frame',
+				'5',
+				'--json',
+			],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('label-flags-conflict');
+		expect(seen.drive).toBeUndefined();
+		expect(seen.exportCalled).toBeUndefined();
+	});
+
+	it('returns pico8-not-found when PICO-8 is absent for the capture (no export attempted)', async () => {
+		const seen: Parameters<typeof frameAdapter>[0] = {};
+		const {stdout, exitCode} = await runExport(
+			() => frameAdapter(seen, pico8NotFound()),
+			['export', cartPath, join(dir, 'out'), '--label-frame', '5', '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('pico8-not-found');
+		expect(seen.exportCalled).toBeUndefined();
+		expect(existsSync(seen.drive!.shotDir)).toBe(false);
+	});
+
+	it('removes the capture dir and leaves no copy when the capture run throws', async () => {
+		const seen: Parameters<typeof frameAdapter>[0] = {};
+		await runExport(
+			() => ({
+				...frameAdapter(seen),
+				async drive(o: DriveOptions): Promise<Pico8DriveResult> {
+					seen.drive = o;
+					throw new Error('boom');
+				},
+			}),
+			['export', cartPath, join(dir, 'out'), '--label-frame', '5', '--json'],
+		).catch(() => undefined);
+		expect(existsSync(seen.drive!.shotDir)).toBe(false);
+		expect(readdirSync(dir).filter((f) => f.startsWith('.'))).toEqual([]);
+		expect(seen.exportCalled).toBeUndefined();
+	});
+
+	it('errors as label-frame-not-captured (with a CTA) when no frame was captured', async () => {
+		const seen: Parameters<typeof frameAdapter>[0] = {};
+		const {stdout, exitCode} = await runExport(
+			() =>
+				frameAdapter(seen, {
+					ok: true,
+					value: {
+						screenshots: [],
+						printh: 'runtime error line 3',
+						exitReason: 'timeout',
+					},
+				}),
+			['export', cartPath, join(dir, 'out'), '--label-frame', '5', '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('label-frame-not-captured');
+		expect(stdout).toContain('timeout');
+		expect(stdout).toContain('runtime error line 3');
+		// The CTA reproduces the SAME no-input frame via a session (not
+		// `playtest run`, whose generic input and fixed shot frames differ).
+		expect(stdout).toContain('playtest step <id> --frames 6');
+		expect(stdout).toContain('playtest shot <id>');
+		expect(stdout).not.toContain('playtest run');
+		// A timeout also points at the backstop.
+		expect(stdout).toContain('--backstop-ms');
+		expect(seen.exportCalled).toBeUndefined();
+		expect(existsSync(seen.drive!.shotDir)).toBe(false);
+		expect(readdirSync(dir).filter((f) => f.startsWith('.'))).toEqual([]);
+	});
+
+	it('leaves an unreadable cart to PICO-8 when no label flag is passed (no throw)', async () => {
+		const dirCart = join(dir, 'weird.p8');
+		execFileSync('mkdir', [dirCart]);
+		const seen: {options?: ExportOptions} = {};
+		const {exitCode} = await runExport(
+			() => stubAdapter('writes-bundle', seen),
+			['export', dirCart, join(dir, 'out'), '--json'],
+		);
+		expect(exitCode).toBe(0);
+		expect(seen.options!.cartPath).toBe(dirCart);
+	});
+
+	it('reports labelSource for the other paths (image / none)', async () => {
+		const labelFile = join(dir, 'label.png');
+		writeFileSync(labelFile, labelPng());
+		const withImage = await runExport(
+			() => stubAdapter('writes-bundle'),
+			['export', cartPath, join(dir, 'a'), '--label', labelFile, '--json'],
+		);
+		expect(JSON.parse(withImage.stdout).labelSource).toBe('image');
+		const none = await runExport(
+			() => stubAdapter('writes-bundle', undefined, true),
+			['export', cartPath, join(dir, 'b'), '--json'],
+		);
+		expect(JSON.parse(none.stdout).labelSource).toBe('none');
 	});
 });

@@ -12,8 +12,10 @@ import {Cli} from 'incur';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {encodePng} from '../engine/gfx/index.js';
 import type {
+	DriveOptions,
 	ExportOptions,
 	Pico8Adapter,
+	Pico8DriveResult,
 	Pico8ExportResult,
 } from '../engine/pico8/index.js';
 import {pico8NotFound} from '../engine/pico8/index.js';
@@ -222,6 +224,7 @@ describe('picopilot serve: failure paths', () => {
 		// into the cart, so "export --label, then re-serve" would fail again. serve
 		// takes the label itself.
 		expect(lower).toMatch(/picopilot serve [^`]*--label/);
+		expect(lower).toContain('--label-frame 0');
 		expect(lower).not.toContain('then re-serve');
 		expect(lower).toContain('do not hand-edit main.p8');
 	});
@@ -305,5 +308,56 @@ describe('picopilot serve: --label (bake a screenshot in for a labelless cart)',
 		expect(stdout).toContain('label-wrong-size');
 		expect(stdout).toContain('scaled for you');
 		expect(exportSeen.options).toBeUndefined();
+	});
+});
+
+describe('picopilot serve: --label-frame (capture the label from the game)', () => {
+	it('captures frame N with no input and serves the export of a labeled copy', async () => {
+		let drive: DriveOptions | undefined;
+		let exportedCart = '';
+		const {exitCode} = await runServe(
+			() => ({
+				...stubAdapter('writes-bundle'),
+				async drive(o: DriveOptions): Promise<Pico8DriveResult> {
+					drive = o;
+					const shot = join(o.shotDir, 'label0.png');
+					writeFileSync(
+						shot,
+						readFileSync(
+							new URL(
+								'../engine/gfx/fixtures/pico8-screenshot-384.png',
+								import.meta.url,
+							),
+						),
+					);
+					return {
+						ok: true,
+						value: {screenshots: [shot], printh: '', exitReason: 'sentinel'},
+					};
+				},
+				async export(o: ExportOptions) {
+					exportedCart = readFileSync(o.cartPath, 'utf8');
+					return stubAdapter('writes-bundle').export(o);
+				},
+			}),
+			fakeServer(),
+			['serve', cartPath, '--label-frame', '2', '--json'],
+		);
+		expect(exitCode).toBe(0);
+		expect(drive).toBeDefined();
+		expect(exportedCart.split('__label__\n')[1]!.split('\n')[10]![10]).toBe(
+			'8',
+		);
+		expect(readdirSync(dir)).toEqual(['main.p8']);
+	});
+
+	it('rejects --label with --label-frame', async () => {
+		const {stdout, exitCode} = await runServe(
+			() => stubAdapter('writes-bundle'),
+			fakeServer(),
+			['serve', cartPath, '--label', 'x.png', '--label-frame', '1', '--json'],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('label-flags-conflict');
 	});
 });

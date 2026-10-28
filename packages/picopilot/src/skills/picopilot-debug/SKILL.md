@@ -183,14 +183,20 @@ differs.
 
 ## Ship it: `picopilot export` and the label splash
 
-`picopilot export <cart> [dest]` writes a playable `index.html` + `index.js` bundle (requires PICO-8). PICO-8 needs a `__label__` (the loading splash) to export well; a labelless cart gives a blank splash or no bundle at all. Give it one from the game itself, with no image tool:
+`picopilot export <cart> [dest]` writes a playable `index.html` + `index.js` bundle (requires PICO-8). PICO-8 needs a `__label__` (the loading splash) to export well; a labelless cart gives a blank splash or no bundle at all. Give it one from the game itself, with no image tool. The simplest way captures a frame for you:
 
 ```sh
-picopilot run main.p8 --shot-dir shots           # the cart calls extcmd("screen") on a good frame
-picopilot export main.p8 out --label shots/<name>.png   # <name>: a path `run` lists under `screenshots`
+picopilot export main.p8 out --label-frame 0    # run the cart with no input, use frame 0 (the title screen)
 ```
 
-Pass the screenshot unchanged. `run` and `playtest` write PICO-8's pixel-exact upscale (384x384 at the default 3x `screenshot_scale`), and `--label` accepts any square multiple of 128 (128x128, 256x256, 384x384, ...) and samples it back down to 128x128. Any 128x128 PNG works too, including palette-indexed and greyscale ones. Do NOT resize or convert it with ImageMagick first: that is never needed, and a resize that is not an exact multiple is rejected (`label-wrong-size`). An existing `__label__` in the cart always wins; `--label` only fills a missing one. `--label` never writes into your cart (it exports a labeled copy), so pass it on every export. `picopilot serve` (play the build in a browser) takes the same `--label` for the same reason: `picopilot serve main.p8 --label shots/<name>.png`.
+`--label-frame <n>` runs any cart headlessly through the playtest harness with NO input and bakes frame `n` in (0-based: 0 is the first drawn frame); the cart does not need to screenshot itself. Use 0 for the title screen, or a later frame if the title fades in or animates. Check the result: the output's `labelSource` is `frame`, and a cart that never reaches frame `n` fails as `label-frame-not-captured`. To look at a frame BEFORE baking it, a session reproduces it exactly: `playtest start main.p8`, `playtest step <id> --frames <n+1>`, `playtest shot <id>` (not `playtest run`, which presses buttons). With no input it cannot get past the title, so for a GAMEPLAY splash, drive the cart and pass the screenshot you want:
+
+```sh
+picopilot playtest run main.p8 --input "..."     # or: picopilot run main.p8 --shot-dir shots
+picopilot export main.p8 out --label shots/<name>.png   # <name>: a path listed under `screenshots`
+```
+
+Pass the screenshot unchanged. `run` and `playtest` write PICO-8's pixel-exact upscale (384x384 at the default 3x `screenshot_scale`), and `--label` accepts any square multiple of 128 (128x128, 256x256, 384x384, ...) and samples it back down to 128x128. Any 128x128 PNG works too, including palette-indexed and greyscale ones. Do NOT resize or convert it with ImageMagick first: that is never needed, and a resize that is not an exact multiple is rejected (`label-wrong-size`). An existing `__label__` in the cart always wins; `--label` only fills a missing one. `--label` and `--label-frame` never write into your cart (they export a labeled copy), so pass one on every export; passing both is an error. `picopilot serve` (play the build in a browser) takes the same two flags for the same reason, e.g. `picopilot serve main.p8 --label-frame 0`.
 
 ## The two structured boundaries
 

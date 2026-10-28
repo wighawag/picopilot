@@ -182,6 +182,14 @@ export function registerServe(
 				.describe(
 					'PNG to bake in as the __label__ (the export splash) for a cart that has none: a `run`/`playtest` screenshot as-is, or any 128x128 PNG. The cart itself is not modified. Ignored if the cart already has a label.',
 				),
+			labelFrame: z
+				.number()
+				.int()
+				.min(0)
+				.optional()
+				.describe(
+					'Capture the label from the game itself: run the cart headlessly with NO input and use frame N (0-based: 0 = the first drawn frame, usually the title screen) as the __label__. Needs PICO-8; the cart need not cooperate. Exclusive with --label; ignored if the cart already has a label.',
+				),
 			port: z
 				.number()
 				.int()
@@ -194,7 +202,9 @@ export function registerServe(
 				.int()
 				.positive()
 				.default(DEFAULT_BACKSTOP_MS)
-				.describe('Safety backstop for the export step.'),
+				.describe(
+					'Safety backstop for the export step (and the --label-frame capture run).',
+				),
 		}),
 		env: z.object({
 			PICO8_PATH: z
@@ -224,6 +234,12 @@ export function registerServe(
 				args: {cart: 'game.p8'},
 				options: {label: './shots/<name>.png'},
 			},
+			{
+				description:
+					'Serve a labelless cart, using its title screen (frame 0) as the splash',
+				args: {cart: 'game.p8'},
+				options: {labelFrame: 0},
+			},
 		],
 		async run({args, options, env, error, ok}) {
 			const cartPath = isAbsolute(args.cart)
@@ -238,9 +254,19 @@ export function registerServe(
 				});
 			}
 
-			// --label: export a labeled throwaway copy (shared with `export`; the
-			// cart is never mutated). A bad image fails before anything is exported.
-			const labeled = prepareLabeledCart(cartPath, options.label);
+			// --label / --label-frame: export a labeled throwaway copy (shared with
+			// `export`; the cart is never mutated). A bad image or a failed capture
+			// fails before anything is exported.
+			const adapter = adapterFactory(env as NodeJS.ProcessEnv);
+			const labeled = await prepareLabeledCart(
+				cartPath,
+				{
+					label: options.label,
+					labelFrame: options.labelFrame,
+					backstopMs: options.backstopMs,
+				},
+				(o) => adapter.drive(o),
+			);
 			if (!labeled.ok) {
 				return error({
 					code: labeled.code,
@@ -258,7 +284,6 @@ export function registerServe(
 			let serveDir: string | undefined;
 			try {
 				serveDir = mkdtempSync(join(tmpdir(), 'picopilot-serve-'));
-				const adapter = adapterFactory(env as NodeJS.ProcessEnv);
 				result = await adapter.export({
 					cartPath: labeled.cartPath,
 					outDir: serveDir,
@@ -287,7 +312,7 @@ export function registerServe(
 				return error({
 					code: 'export-failed',
 					message: result.value.labelWarning
-						? 'PICO-8 produced no bundle: this cart has no __label__ (the export splash), which the browser export needs. To just SEE your own build work, use `picopilot run` or `picopilot playtest` (no label needed) instead of serve. If you genuinely want a browser build to SHARE, pass a splash image: `picopilot serve <cart> --label <screenshot.png>` (any path `run`/`playtest` lists under `screenshots` works as-is; do NOT hand-edit main.p8).'
+						? 'PICO-8 produced no bundle: this cart has no __label__ (the export splash), which the browser export needs. To just SEE your own build work, use `picopilot run` or `picopilot playtest` (no label needed) instead of serve. If you genuinely want a browser build to SHARE, give it a splash: `picopilot serve <cart> --label-frame 0` captures the title screen for you, or `picopilot serve <cart> --label <screenshot.png>` takes any path `run`/`playtest` lists under `screenshots` as-is (do NOT hand-edit main.p8).'
 						: 'PICO-8 produced no export bundle. Check the cart runs without a boot error (via `picopilot run`).',
 					exitCode: 1,
 				});

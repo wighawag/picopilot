@@ -77,6 +77,14 @@ export function registerExport(
 				.describe(
 					'PNG to bake in as the cart __label__ (the export splash), for a cart that has none: a `run`/`playtest` screenshot as-is (any 128*k square, e.g. 384x384, is scaled down for you) or any 128x128 PNG. Ignored if the cart already has a label.',
 				),
+			labelFrame: z
+				.number()
+				.int()
+				.min(0)
+				.optional()
+				.describe(
+					'Capture the label from the game itself: run the cart headlessly with NO input and use frame N (0-based: 0 = the first drawn frame, usually the title screen) as the __label__. Needs PICO-8; the cart need not cooperate. Exclusive with --label; ignored if the cart already has a label.',
+				),
 			payloadOnly: z
 				.boolean()
 				.default(false)
@@ -89,7 +97,7 @@ export function registerExport(
 				.positive()
 				.default(DEFAULT_BACKSTOP_MS)
 				.describe(
-					'Safety backstop: kill PICO-8 after this many ms if the export never completes.',
+					'Safety backstop: kill PICO-8 after this many ms if the export (or the --label-frame capture run) never completes.',
 				),
 		}),
 		// incur resolves these from the (test-overridable) env source and hands
@@ -115,6 +123,11 @@ export function registerExport(
 			files: z
 				.array(z.string())
 				.describe('Absolute paths of every file the bundle contains.'),
+			labelSource: z
+				.enum(['cart', 'image', 'frame', 'none'])
+				.describe(
+					"Where the bundle's label came from: the cart's own __label__, --label, --label-frame, or none.",
+				),
 			labelWarning: z
 				.boolean()
 				.describe(
@@ -132,6 +145,12 @@ export function registerExport(
 					'Bake a `run` screenshot in as the label splash for a labelless cart',
 				args: {cart: 'game.p8', dest: './website/static/games/my-game'},
 				options: {label: './shots/<name>.png'},
+			},
+			{
+				description:
+					'Capture the title screen (frame 0) as the label splash, no image needed',
+				args: {cart: 'game.p8', dest: './website/static/games/my-game'},
+				options: {labelFrame: 0},
 			},
 			{
 				description:
@@ -154,10 +173,20 @@ export function registerExport(
 				});
 			}
 
-			// --label <png>: bake a PNG in as the __label__ of a throwaway copy (the
-			// user's cart is never mutated; an existing label wins). Shared with
-			// `serve`, see label-cart.ts.
-			const labeled = prepareLabeledCart(cartPath, options.label);
+			// --label <png> / --label-frame <n>: bake an image, or a captured frame of
+			// the running cart, in as the __label__ of a throwaway copy (the user's
+			// cart is never mutated; an existing label wins). Shared with `serve`,
+			// see label-cart.ts.
+			const adapter = adapterFactory(env as NodeJS.ProcessEnv);
+			const labeled = await prepareLabeledCart(
+				cartPath,
+				{
+					label: options.label,
+					labelFrame: options.labelFrame,
+					backstopMs: options.backstopMs,
+				},
+				(o) => adapter.drive(o),
+			);
 			if (!labeled.ok) {
 				return error({
 					code: labeled.code,
@@ -182,7 +211,6 @@ export function registerExport(
 			let result: Pico8ExportResult;
 			try {
 				if (!existsSync(outDir)) mkdirSync(outDir, {recursive: true});
-				const adapter = adapterFactory(env as NodeJS.ProcessEnv);
 				result = await adapter.export({
 					cartPath: labeled.cartPath,
 					outDir,
@@ -211,7 +239,7 @@ export function registerExport(
 				return error({
 					code: 'export-failed',
 					message: labelWarning
-						? 'PICO-8 produced no bundle (the cart has no __label__ to embed). Give it one with --label <screenshot.png> (a `picopilot run`/`playtest` screenshot works as-is), or capture a label in PICO-8 (F7), then re-export.'
+						? 'PICO-8 produced no bundle (the cart has no __label__ to embed). Give it one with --label-frame 0 (captures the title screen for you), or --label <screenshot.png> (a `picopilot run`/`playtest` screenshot works as-is), then re-export.'
 						: 'PICO-8 produced no export bundle. Check the cart runs without a boot error.',
 					exitCode: 1,
 				});
@@ -237,6 +265,11 @@ export function registerExport(
 								'The cart has no __label__, so the export splash is blank. Add one for a nicer bundle:',
 							commands: [
 								{
+									command: 'export <cart> <dest> --label-frame 0',
+									description:
+										'Capture the title screen (frame 0) of the running cart as the label, no image needed.',
+								},
+								{
 									command: 'export --label <screenshot.png>',
 									description:
 										'Bake a `run`/`playtest` screenshot in as the label splash (passed as-is, it is scaled for you), or capture one in PICO-8 (F7) before exporting.',
@@ -251,6 +284,7 @@ export function registerExport(
 					html: htmlPath,
 					js: jsPath,
 					files: [...files],
+					labelSource: labeled.labelSource,
 					labelWarning,
 				},
 				cta === undefined ? undefined : {cta},

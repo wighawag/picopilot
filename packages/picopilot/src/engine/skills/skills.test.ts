@@ -190,6 +190,9 @@ describe('picopilot skills: generation output (the authored discipline skills)',
 		expect(md).toContain('--label');
 		expect(md).toContain('384x384');
 		expect(md.toLowerCase()).toContain('no image tool');
+		// The zero-image path: capture a frame of the running cart as the label.
+		expect(md).toContain('--label-frame 0');
+		expect(md).toContain('label-frame-not-captured');
 	});
 
 	it('picopilot-debug carries the static-gate + run loop and the dependency boundaries', () => {
