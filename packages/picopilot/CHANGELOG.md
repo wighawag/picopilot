@@ -1,5 +1,13 @@
 # picopilot
 
+## 0.1.5
+
+### Patch Changes
+
+- 74be3d7: `export --label` now takes a `picopilot run`/`playtest` screenshot as-is. PICO-8 writes screenshots as a 384x384 (3x) upscale, which `--label` used to reject as the wrong size, and shrinking one with an image tool then failed on the indexed PNG format it produced. The label decoder now reads palette-indexed (1/2/4/8-bit), greyscale and 16-bit PNGs as well as RGB/RGBA, and downscales any square exact multiple of 128x128 (256, 384, 512, ...) by nearest-neighbour sampling. Other sizes still fail as `label-wrong-size`, now naming the accepted sizes, and both label errors point you at passing the screenshot directly instead of reaching for an image tool. `picopilot serve` gains the same `--label` flag: it always exports from the cart, and `export --label` never writes the label into the cart, so its old advice ("export --label, then re-serve") could not work. The `picopilot-debug` skill documents the run-then-export label workflow.
+- f1eacbe: `export` and `serve` can now make the loading splash from the game itself: `--label-frame <n>` runs a labelless cart headlessly through the playtest harness with no input, and bakes frame `n` in (0-based: 0 is the first drawn frame, usually the title screen) as the `__label__`. The cart does not need to screenshot itself, and it is never modified (a labeled copy is exported). A cart that already has a label keeps it and is not run; passing both `--label` and `--label-frame` is rejected as `label-flags-conflict`; a cart that never reaches frame `n` fails as `label-frame-not-captured` with its last output and a CTA that reproduces the same frame in a playtest session. The labelless-cart messages now suggest `--label-frame 0` first. `export` also reports `labelSource` (`cart`, `image`, `frame` or `none`).
+- 5e34776: `playtest shot` now returns the screenshot it just took. PICO-8 acknowledges the SHOT before the PNG is on disk, so the path was often missing, and the old "most recent PNG" fallback could return the previous shot instead. It now waits briefly for the exact file.
+
 ## 0.1.4
 
 ### Patch Changes
