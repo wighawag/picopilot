@@ -185,7 +185,11 @@ export interface RenderHarness {
 	readonly cartText: string;
 	/** The record window in seconds the adapter should let the capture run for. */
 	readonly seconds: number;
-	/** The number of `_update` frames the harness records for (= seconds * 30fps). */
+	/**
+	 * The number of `_update` frames the harness records for (= seconds * 30fps).
+	 * For `buildRecordHarness` on a cart that uses `_update60`, the recorder
+	 * counts seconds * 60 frames instead, chosen at run time.
+	 */
 	readonly frames: number;
 	/** The base filename the harness passes to `extcmd("set_filename")`. */
 	readonly wavBasename: string;
@@ -295,11 +299,13 @@ export function buildRenderHarness(
  * cooperative recorder tab that starts recording immediately and stops after the
  * window. The recorder runs as an extra code tab so it does not disturb the
  * cart's own `_update`/`_draw` (PICO-8 runs all tabs; the appended top-level code
- * arms the recorder and a hooked `_update` advances the timer).
+ * arms the recorder and a hooked `_update`/`_update60` advances the timer).
  *
- * Because a general cart may define its own `_update`, the recorder wraps it: it
- * saves the cart's `_update` and installs one that ticks the record timer then
- * calls the original. This is the record analogue of the debug skill's "add
+ * Because a general cart may define its own `_update` or `_update60` (PICO-8
+ * calls `_update60` instead of `_update` when it exists), the recorder wraps
+ * whichever the cart uses: it saves the cart's callback and installs one that
+ * ticks the record timer then calls the original, counting frames at that
+ * loop's rate (30 or 60 fps). This is the record analogue of the debug skill's "add
  * capture lines, run, revert" recipe, done on a THROWAWAY copy.
  *
  * The harness runs from a different folder than the source cart (an isolated
@@ -339,21 +345,33 @@ export function buildRecordHarness(
 		cart.getSection('lua') ?? '',
 		options.readInclude,
 	);
-	// Append the recorder AFTER the cart's own code. It wraps _update so it works
-	// whether or not the cart defines one, and never edits the cart's own logic.
+	// Append the recorder AFTER the cart's own code, so the cart's callbacks
+	// exist when it runs. It hooks whichever update loop the cart uses: PICO-8
+	// calls _update60 INSTEAD of _update when a cart defines it (60fps), so a
+	// recorder that only wrapped _update never ticked on such a cart and the
+	// run hit the backstop without ever starting audio_rec. The frame count
+	// follows the loop's rate so the window stays `seconds` long either way.
+	const frames60 = Math.max(1, Math.round(seconds * 60));
 	const recorder = [
 		'',
 		'-->8',
 		'-- picopilot audio record harness (throwaway; ADR-0009).',
 		"-- Records the cart's own audio; real-time capture, NOT an offline export.",
 		'__pp_rec_update=_update',
+		'__pp_rec_update60=_update60',
 		'__pp_rec_t=0',
-		'function _update()',
+		`__pp_rec_n=${frames}`,
+		`if __pp_rec_update60 then __pp_rec_n=${frames60} end`,
+		'function __pp_rec_tick()',
 		' __pp_rec_t+=1',
 		` if __pp_rec_t==1 then extcmd("set_filename","${wavBasename}") extcmd("audio_rec") end`,
-		` if __pp_rec_t==${frames} then extcmd("audio_end",1) end`,
-		` if __pp_rec_t==${frames + 1} then printh("${sentinel}") end`,
-		' if __pp_rec_update then __pp_rec_update() end',
+		' if __pp_rec_t==__pp_rec_n then extcmd("audio_end",1) end',
+		` if __pp_rec_t==__pp_rec_n+1 then printh("${sentinel}") end`,
+		'end',
+		'if __pp_rec_update60 then',
+		' function _update60() __pp_rec_tick() __pp_rec_update60() end',
+		'else',
+		' function _update() __pp_rec_tick() if __pp_rec_update then __pp_rec_update() end end',
 		'end',
 		'',
 	].join('\n');

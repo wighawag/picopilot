@@ -165,6 +165,25 @@ describe('buildRecordHarness', () => {
 		expect(h.description).toBe('the running cart');
 	});
 
+	it('hooks _update60 when the cart uses it, counting frames at 60fps', () => {
+		const h = buildRecordHarness(
+			`${HEADER}__lua__\nfunction _update60() foo() end\n`,
+			{seconds: 2},
+		);
+		const lua = Cart.parse(h.cartText).getSection('lua') ?? '';
+		// PICO-8 calls _update60 INSTEAD of _update: wrapping only _update never ticked.
+		expect(lua).toContain('__pp_rec_update60=_update60');
+		expect(lua).toContain(
+			'function _update60() __pp_rec_tick() __pp_rec_update60() end',
+		);
+		// 2 s = 60 frames at 30fps, 120 at 60fps; the Lua picks by the loop in use.
+		expect(lua).toContain('__pp_rec_n=60');
+		expect(lua).toContain('if __pp_rec_update60 then __pp_rec_n=120 end');
+		expect(lua).toContain(
+			'if __pp_rec_t==__pp_rec_n then extcmd("audio_end",1) end',
+		);
+	});
+
 	it('uses the default record window when none is given', () => {
 		const h = buildRecordHarness(`${HEADER}__lua__\n`);
 		expect(h.seconds).toBe(DEFAULT_RECORD_SECONDS);
