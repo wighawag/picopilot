@@ -47,6 +47,8 @@ jobs:
         # base_path from configure-pages is the repo subpath (e.g. /picopilot).
         env:
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          # absolute URL for link-preview meta tags (og:image etc.)
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
         run: pnpm --filter ./website build
 
       - name: Upload artifact

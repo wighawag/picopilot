@@ -178,6 +178,18 @@ export function gameDir(game: DiscoveredGame): string {
 }
 
 /**
+ * Absolute URLs for a game's link preview (og:image needs an absolute URL): its
+ * page, and the upscaled `og.png` written next to its label at build time
+ * (scripts/og-images.mjs), or undefined when the game has no label.
+ */
+export function gamePageUrl(game: DiscoveredGame): string {
+	return `${__SITE_URL__}/showcase/${game.slug}/`;
+}
+export function gamePreviewImage(game: DiscoveredGame): string | undefined {
+	return game.hasLabel ? `${__SITE_URL__}/games/${game.dir}/og.png` : undefined;
+}
+
+/**
  * The public URL of a game's label image (PICO-8's title card), or undefined
  * when the game has no `label.png` in its folder.
  */
