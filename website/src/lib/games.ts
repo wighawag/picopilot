@@ -1,8 +1,24 @@
 import {base} from '$app/paths';
 
 /**
+ * Which part of the showcase a game belongs to:
+ *   - 'jam'     (default): a time-boxed game-jam run, grouped by theme then run-time.
+ *     Folder: `static/games/<themeSlug>/<runtime>/<slug>/`.
+ *   - 'directed': a game that was directed, playtested and iterated over several
+ *     sessions until it held up. No jam theme or time budget. Listed first.
+ *     Folder: `static/games/directed/<slug>/`.
+ */
+export type Track = 'jam' | 'directed';
+
+/** An external link shown on a game's player page (its own site, a writeup...). */
+export interface GameLink {
+	readonly label: string;
+	readonly url: string;
+}
+
+/**
  * One showcased game. Auto-discovered: each game is a folder
- * `static/games/<themeSlug>/<runtime>/<slug>/` holding its export
+ * `static/games/<themeSlug>/<runtime>/<slug>/` (or `static/games/directed/<slug>/`) holding its export
  * (`index.html` + `index.js`, optional `label.png`) AND a `meta.json` with the
  * fields below. The site globs those `meta.json`s (no hand-maintained list), so
  * adding a game is dropping one folder. `slug` is the unique id used by the
@@ -18,17 +34,21 @@ export interface Game {
 	readonly blurb: string;
 	/** Optional author/credit line. */
 	readonly author?: string;
+	/** Showcase section; defaults to 'jam'. */
+	readonly track?: Track;
+	/** Optional external links, shown on the player page. */
+	readonly links?: readonly GameLink[];
 	/**
 	 * The jam THEME this game was built for (display string, e.g. "one button").
-	 * The showcase groups by this first.
+	 * The showcase groups by this first. Required for 'jam', unused for 'directed'.
 	 */
-	readonly theme: string;
+	readonly theme?: string;
 	/**
 	 * The RUN-TIME budget it was built in (display string, e.g. "3 min",
 	 * "50 min"). The showcase groups by this second, ordered LONGEST first
-	 * (the more substantial games lead).
+	 * (the more substantial games lead). Required for 'jam', unused for 'directed'.
 	 */
-	readonly runtime: string;
+	readonly runtime?: string;
 	/**
 	 * Whether this game's folder holds a `label.png` (PICO-8's 128x128 title
 	 * card). When true the card shows it as a thumbnail; else the card is
@@ -74,13 +94,20 @@ function discover(): DiscoveredGame[] {
 		if (!meta || !meta.slug || !meta.title) continue;
 		out.push({...meta, dir});
 	}
-	// Stable order: theme, then runtime (LONGEST first by parsed minutes), then title.
+	// Stable order: directed first, then theme, then runtime (LONGEST first by
+	// parsed minutes), then title.
 	return out.sort(
 		(a, b) =>
-			a.theme.localeCompare(b.theme) ||
-			runtimeMinutes(b.runtime) - runtimeMinutes(a.runtime) ||
+			Number(isJam(a)) - Number(isJam(b)) ||
+			(a.theme ?? '').localeCompare(b.theme ?? '') ||
+			runtimeMinutes(b.runtime ?? '') - runtimeMinutes(a.runtime ?? '') ||
 			a.title.localeCompare(b.title),
 	);
+}
+
+/** True for a game-jam entry (the default track). */
+export function isJam(game: Game): boolean {
+	return (game.track ?? 'jam') === 'jam';
 }
 
 /** Parse a runtime display string ("3 min", "50 min", "24 h") to minutes for ordering. */
@@ -97,6 +124,11 @@ function runtimeMinutes(runtime: string): number {
 /** All showcased games, discovered and ordered. */
 export const games: readonly DiscoveredGame[] = discover();
 
+/** The directed games (iterated over several sessions), in title order. */
+export const directedGames: readonly DiscoveredGame[] = games.filter(
+	(g) => !isJam(g),
+);
+
 /**
  * The showcase grouped for display: an ordered list of themes, each with an
  * ordered list of runtime groups, each holding that group's games. This is what
@@ -111,15 +143,18 @@ export interface ThemeGroup {
 	readonly runtimes: readonly RuntimeGroup[];
 }
 
+/** The jam games grouped by theme then run-time (directed games are listed separately). */
 export function groupedGames(): readonly ThemeGroup[] {
 	const byTheme = new Map<string, Map<string, DiscoveredGame[]>>();
 	for (const g of games) {
-		const runtimes =
-			byTheme.get(g.theme) ?? new Map<string, DiscoveredGame[]>();
-		const bucket = runtimes.get(g.runtime) ?? [];
+		if (!isJam(g)) continue;
+		const theme = g.theme ?? 'untitled jam';
+		const runtime = g.runtime ?? '';
+		const runtimes = byTheme.get(theme) ?? new Map<string, DiscoveredGame[]>();
+		const bucket = runtimes.get(runtime) ?? [];
 		bucket.push(g);
-		runtimes.set(g.runtime, bucket);
-		byTheme.set(g.theme, runtimes);
+		runtimes.set(runtime, bucket);
+		byTheme.set(theme, runtimes);
 	}
 	const themes: ThemeGroup[] = [];
 	for (const [theme, runtimes] of byTheme) {

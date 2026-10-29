@@ -14,6 +14,12 @@ Both trees are organized the same way, **by theme, then by run-time**:
   `meta.json`. The website auto-discovers games by globbing those `meta.json`s
   and groups them by theme then run-time (no hand-maintained list).
 
+**Directed games** (a human directing and playtesting over several sessions, not jam runs) are
+served from `website/static/games/directed/<slug>/` with `"track": "directed"` (see
+`website/static/games/README.md`). Their source may live in their own repo
+instead of here: `directed/conquest` is developed in a separate (private)
+repository, and its exported `.p8` carries its full source anyway.
+
 This is distinct from `packages/picopilot/bench/out/`, which holds throwaway
 game-jam benchmark run outputs (gitignored except a few curated entries).
 

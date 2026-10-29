@@ -44,6 +44,27 @@ paid binary, ADR-0013).
 `slug` must be unique across the showcase (it is the per-game player route id);
 `theme` and `runtime` are display strings and also the folder names.
 
+## Directed games (the "Games" section)
+
+A game that was directed, playtested and iterated over several sessions (rather
+than built in one time-boxed jam run) goes in `static/games/directed/<slug>/` with
+`"track": "directed"` in its `meta.json`. It needs no `theme` or `runtime`, and is
+listed first, in the "Games" section (jam games follow under "Game jams"). Optional `links` (shown on its
+player page) point at its own home:
+
+```json
+{
+	"slug": "my-game",
+	"title": "My Game",
+	"blurb": "One line about it.",
+	"author": "you",
+	"track": "directed",
+	"links": [{"label": "Project page", "url": "https://example.com/"}],
+	"shape": "standalone",
+	"hasLabel": true
+}
+```
+
 ## Standalone vs payload-only
 
 - **standalone** (`shape: 'standalone'`, the default): the folder holds

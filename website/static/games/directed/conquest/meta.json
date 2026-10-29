@@ -1,0 +1,12 @@
+{
+	"slug": "conquest",
+	"title": "CONQUEST",
+	"blurb": "A pocket Konquest with simultaneous turns: everyone plans in secret, then all orders resolve at once. No-luck battles, secret fleet destinations, and 1 to 3 AI rivals who watch the leader, gang up and hold grudges.",
+	"author": "wighawag, directed build with Claude",
+	"track": "directed",
+	"links": [
+		{"label": "Its own page (and the downloadable cart)", "url": "https://pico-8-games.netlify.app/"}
+	],
+	"shape": "standalone",
+	"hasLabel": true
+}
