@@ -15,15 +15,16 @@
  * tempo. Every note occupies exactly one tracker ROW; all rows share ONE
  * SFX-level `speed`. A picopilot-MML length is therefore a ROW COUNT, not a
  * musical fraction, and there is no tempo/BPM token. Holding a note for M rows
- * re-emits the same note in the following (M-1) rows (PICO-8 has no cross-row
- * sustain bit).
+ * emits the same pitch on M rows; PICO-8 plays consecutive same-pitch rows as
+ * one continuous tone, so a held note is shaped by stepping its VOLUME across
+ * those rows (fade/drop effects land once per held note, ADR-0019).
  *
  * Out-of-range pitch and >32 rows are STRUCTURED ERRORS ({@link AudioMmlError}),
  * never silent clamps: a silent clamp produces wrong-sounding music the author
  * cannot see (finding B.2 / B.4, matching picopilot's smart-refuse philosophy).
  *
  * SFX-level FILTER directives (finding A.7): `!noiz !buzz !detune1/!detune2
- * !reverb[1|2] !dampen[1|2]` set PICO-8's 5 per-SFX filters (the first header
+ * !reverb !dampen[1|2]` set PICO-8's 5 per-SFX filters (the first header
  * byte), reaching the class of DESIGNED sounds (explosion = DAMPEN body + REVERB
  * tail, engine hum, pad) that no per-note pitch/waveform/volume MML can
  * synthesize. `!`-prefixed keywords never collide with the note grammar (unlike
@@ -61,7 +62,7 @@ export const DEFAULT_LENGTH = 1;
  *
  * Decoded byte-for-byte on PICO-8 v0.2.7 by poke-and-readback + single-bit audio
  * diff (finding A.7). NOIZ applies only to instrument 6 (`@6`, manual);
- * DAMPEN/REVERB have 2 levels each (`!dampen`/`!dampen2`, `!reverb`/`!reverb2`).
+ * DAMPEN has 2 levels (`!dampen`/`!dampen2`); REVERB is one switch (ADR-0010).
  */
 export const FILTER_NOIZ = 0x02;
 export const FILTER_BUZZ = 0x04;
@@ -109,6 +110,12 @@ export type AudioMmlErrorCode =
 	| 'audio-mml-sfx-overflow'
 	/** A `!dampen<N>`/`!reverb<N>` level fell outside 1..2 (finding A.7). */
 	| 'audio-mml-filter-level-out-of-range'
+	/**
+	 * A modal setter (`v`, `v[...]`, `e`, `@`, `~`) sat between a note and its `^`
+	 * tie. A tie continues ONE held note (ADR-0019), so the change would be
+	 * ignored; it is refused instead of silently dropped.
+	 */
+	| 'audio-mml-tie-state-change'
 	/** The MML text is syntactically malformed (a token we cannot parse). */
 	| 'audio-mml-parse-error';
 
@@ -129,7 +136,7 @@ export class AudioMmlError extends Error {
 }
 
 /** One decoded tracker note (row): the 5 `__sfx__` nibbles `PP W V E`. */
-interface Note {
+export interface SfxNote {
 	/** Chromatic pitch index 0..63 (C0..D#5). Ignored when `volume === 0`. */
 	pitch: number;
 	/** Waveform / instrument nibble 0..15 (0..7 built-in, 8..15 custom SFX-instr). */
@@ -171,65 +178,235 @@ export interface SfxTranspileResult {
 	roundingWarnings: RowRoundingWarning[];
 }
 
+/**
+ * A per-note VOLUME ENVELOPE (`v[...]`, ADR-0019). `head` is applied from the
+ * note's first row, its last value held for as long as the note lasts; the
+ * optional `tail` (after `/`) replaces the note's LAST rows, so a release lands
+ * at the end of every note long enough to carry it (more rows than the tail).
+ */
+export interface VolumeEnvelope {
+	readonly head: readonly number[];
+	readonly tail: readonly number[];
+}
+
 /** Modal parser state (finding B.1: `@`/`v`/`e`/`o`/`l` are sticky). */
 interface State {
 	octave: number;
 	waveform: number;
 	volume: number;
+	/** `v[...]`: when set, it shapes every note's volume instead of `volume`. */
+	envelope: VolumeEnvelope | undefined;
 	effect: number;
+	/** `~N`: switch held notes to vibrato (e2) from their row N on; 0 = off. */
+	vibratoDelay: number;
 	length: number;
+}
+
+/** The modal values a held note was struck with (a `^` tie must not change them). */
+export interface HeldNote {
+	pitch: number;
+	waveform: number;
+	volume: number;
+	envelope: VolumeEnvelope | undefined;
+	effect: number;
+	vibratoDelay: number;
+}
+
+/** The effect numbers whose behaviour is per ROW, not per held note (finding A.4). */
+const EFFECT_DROP = 3;
+const EFFECT_FADE_IN = 4;
+const EFFECT_FADE_OUT = 5;
+const EFFECT_VIBRATO = 2;
+
+/**
+ * The parsed row stream of a picopilot-MML string, before it is cut into one
+ * `__sfx__` row. `music from-score` consumes this directly (a channel of ANY
+ * length), `sfx from-mml` caps it at 32 rows and emits one SFX.
+ */
+export interface MmlRows {
+	/** Every tracker row, in order. */
+	notes: SfxNote[];
+	/** The `s<N>` speed, or {@link DEFAULT_SPEED} when no `s<N>` was given. */
+	speed: number;
+	/** Whether an explicit `s<N>` appeared (a score refuses a mismatching one). */
+	speedSet: boolean;
+	/** The OR of the `!` filter directives. */
+	filters: number;
+	/** The row index at `{`, if any. */
+	loopStartRow: number | undefined;
+	/** The row index at `}`, if any. */
+	loopEndRow: number | undefined;
+	/** Dotted lengths that were rounded to whole rows. */
+	roundingWarnings: RowRoundingWarning[];
+}
+
+/**
+ * Renders ONE held note (struck once, held for `rows` rows) into tracker rows
+ * (ADR-0019). PICO-8 plays consecutive same-pitch rows as one continuous tone,
+ * so a held note is shaped by stepping VOLUME across its rows, never by
+ * repeating a one-row effect on each of them:
+ *
+ * - volume: the `v[...]` envelope when one is set; otherwise, under fade-out
+ *   (`e5`), a linear ramp from `v` towards 0 (`ceil`, so no row goes silent
+ *   before the end); otherwise the flat `v`.
+ * - `e4` fade in: the FIRST row only (the attack), the rest hold.
+ * - `e5` fade out: the LAST row only (it fades the ramp's final step to 0).
+ * - `e3` drop: the FIRST row only; the remaining rows are SILENT. A drop ends far
+ *   below the note's pitch, so a held drop is a one-row hit followed by rests
+ *   (re-sounding the pitch would be a second, un-dropped note).
+ * - `e1` slide, `e2` vibrato, `e6`/`e7` arpeggio: EVERY row. They are
+ *   continuous (vibrato), a no-op between equal pitches (slide), or defined over
+ *   the 4-row group a row sits in (arpeggio), so carrying them on is what keeps
+ *   their meaning.
+ * - `~N` delayed vibrato: rows from index N on that would carry no effect get
+ *   `e2`, so a long note starts plain and blooms into vibrato.
+ *
+ * A one-row note is emitted exactly as written (its effect included).
+ */
+export function renderHeldNote(note: HeldNote, rows: number): SfxNote[] {
+	const out: SfxNote[] = [];
+	for (let k = 0; k < rows; k++) {
+		let volume: number;
+		if (note.envelope !== undefined) {
+			volume = envelopeVolume(note.envelope, k, rows);
+		} else if (note.effect === EFFECT_FADE_OUT && rows > 1) {
+			volume = Math.ceil(note.volume * (1 - k / rows));
+		} else {
+			volume = note.volume;
+		}
+
+		let effect: number;
+		switch (note.effect) {
+			case EFFECT_FADE_IN:
+				effect = k === 0 ? EFFECT_FADE_IN : 0;
+				break;
+			case EFFECT_FADE_OUT:
+				effect = k === rows - 1 ? EFFECT_FADE_OUT : 0;
+				break;
+			case EFFECT_DROP:
+				if (k > 0) {
+					out.push({pitch: 0, waveform: note.waveform, volume: 0, effect: 0});
+					continue;
+				}
+				effect = EFFECT_DROP;
+				break;
+			default:
+				effect = note.effect;
+		}
+		if (effect === 0 && note.vibratoDelay > 0 && k >= note.vibratoDelay) {
+			effect = EFFECT_VIBRATO;
+		}
+		// A silent row inside a note carries no effect (nothing to shape).
+		if (volume === 0) effect = 0;
+		out.push({pitch: note.pitch, waveform: note.waveform, volume, effect});
+	}
+	return out;
+}
+
+/**
+ * The volume a `v[...]` envelope gives row `k` of a `rows`-row note: the tail
+ * owns the note's last `tail.length` rows when the note is LONGER than the tail
+ * (so the head always sounds), the head owns the rest with its last value held.
+ */
+function envelopeVolume(env: VolumeEnvelope, k: number, rows: number): number {
+	const tailLen = env.tail.length;
+	if (tailLen > 0 && rows > tailLen && k >= rows - tailLen) {
+		return env.tail[k - (rows - tailLen)]!;
+	}
+	return env.head[Math.min(k, env.head.length - 1)]!;
 }
 
 /**
  * Transpiles a picopilot-MML string into ONE `__sfx__` text row (finding Part
  * A/B). Emits the friendly text nibbles directly.
  *
- * Modal state model (finding B.1): `@<hex>` waveform, `v<0-7>` volume,
- * `e<0-7>`/mnemonic effect, `o<0-5>` octave, `l<N>` default length, `>`/`<`
- * octave shift, all sticky. A bare note emits one row using the current state.
+ * Modal state model (finding B.1): `@<hex>` waveform, `v<0-7>` volume (or
+ * `v[...]` a per-note volume envelope, ADR-0019), `e<0-7>` effect, `~<N>`
+ * delayed vibrato, `o<0-5>` octave, `l<N>` default length, `>`/`<` octave
+ * shift, all sticky. A bare note emits one row using the current state.
  *
  * SFX-level directives (finding B.5): `s<N>` speed (default 16), `{`/`}` loop
  * markers (single `{` = the LEN special case).
  *
- * Durations are TRACKER ROWS (finding B.4): a length `N` = N rows, emitted as
- * the note then `(N-1)` tie rows re-striking it; `.` multiplies by 1.5 (rounded
- * to the nearest whole row, warned); `r` = silent rows; `^` extends the previous
- * note.
+ * Durations are TRACKER ROWS (finding B.4): a length `N` = one note HELD for N
+ * rows, shaped by {@link renderHeldNote} (ADR-0019); `.` multiplies by 1.5
+ * (rounded to the nearest whole row, warned); `r` = silent rows; `^` extends the
+ * previous note (re-shaping it as one longer note).
  *
  * @throws {AudioMmlError} `audio-mml-pitch-out-of-range` (a note below C0 / above
- *   D#5), `audio-mml-sfx-overflow` (>32 rows), or `audio-mml-parse-error` (a
+ *   D#5), `audio-mml-sfx-overflow` (>32 rows), `audio-mml-tie-state-change` (a
+ *   modal change between a note and its `^`), or `audio-mml-parse-error` (a
  *   token that cannot be parsed, incl. a tempo-style input).
  */
 export function mmlToSfxRow(mml: string): SfxTranspileResult {
+	const parsed = mmlToRows(mml, {maxRows: SFX_MAX_ROWS});
+	const {loopStart, loopEnd} = resolveLoop(
+		parsed.loopStartRow,
+		parsed.loopEndRow,
+		parsed.notes.length,
+	);
+	return {
+		row: emitSfxRow({
+			filters: parsed.filters,
+			speed: parsed.speed,
+			loopStart,
+			loopEnd,
+			notes: parsed.notes,
+		}),
+		rows: parsed.notes.length,
+		speed: parsed.speed,
+		loopStart,
+		loopEnd,
+		filters: parsed.filters,
+		roundingWarnings: parsed.roundingWarnings,
+	};
+}
+
+/**
+ * Parses picopilot-MML into its tracker-row stream (the core of
+ * {@link mmlToSfxRow}). `maxRows` is the overflow cap: 32 for one SFX,
+ * `Infinity` for a `music from-score` channel, which is cut into SFX later.
+ *
+ * @throws {AudioMmlError} as {@link mmlToSfxRow}.
+ */
+export function mmlToRows(
+	mml: string,
+	options: {maxRows?: number} = {},
+): MmlRows {
+	const maxRows = options.maxRows ?? SFX_MAX_ROWS;
 	const state: State = {
 		octave: DEFAULT_OCTAVE,
 		waveform: 0,
 		volume: 7,
+		envelope: undefined,
 		effect: 0,
+		vibratoDelay: 0,
 		length: DEFAULT_LENGTH,
 	};
 
-	const notes: Note[] = [];
+	const notes: SfxNote[] = [];
 	const warnings: RowRoundingWarning[] = [];
 	let speed = DEFAULT_SPEED;
+	let speedSet = false;
 	let filters = 0;
 	let loopStartRow: number | undefined;
 	let loopEndRow: number | undefined;
-	let lastNote: Note | undefined;
+	/** The last held note, where its rows start, and how many rows it holds. */
+	let last: {note: HeldNote; start: number; rows: number} | undefined;
 
 	const src = mml;
 	let i = 0;
 	const len = src.length;
 
 	/** The overflow check, applied every time rows are appended (finding B.4). */
-	const pushNote = (note: Note): void => {
-		if (notes.length + 1 > SFX_MAX_ROWS) {
+	const pushRows = (rows: SfxNote[]): void => {
+		if (notes.length + rows.length > maxRows) {
 			throw new AudioMmlError(
 				'audio-mml-sfx-overflow',
-				`picopilot-MML produced more than ${SFX_MAX_ROWS} tracker rows (an SFX holds at most ${SFX_MAX_ROWS} rows). Split the melody across multiple SFX + a music pattern, or shorten it. (Remember: a length is a ROW COUNT, not a musical note value.)`,
+				`picopilot-MML produced more than ${maxRows} tracker rows (an SFX holds at most ${maxRows} rows). Write a longer melody with \`music from-score\` (it splits any length into SFX + patterns), or shorten it. (Remember: a length is a ROW COUNT, not a musical note value.)`,
 			);
 		}
-		notes.push(note);
+		notes.push(...rows);
 	};
 
 	while (i < len) {
@@ -257,13 +434,14 @@ export function mmlToSfxRow(mml: string): SfxTranspileResult {
 				);
 			}
 			speed = value;
+			speedSet = true;
 			i = next;
 			continue;
 		}
 		// `!<name>[<level>]`: an SFX-level FILTER directive (finding A.7). A `!` head
 		// never collides with the note grammar (unlike the rejected `sl vb dr`
 		// mnemonics, which WERE bare note-letter sequences, ADR-0008). They set the
-		// first header byte; DAMPEN/REVERB take an optional 1..2 level (default 1).
+		// first header byte; DAMPEN takes an optional 1..2 level (default 1).
 		if (ch === '!') {
 			const parsed = readFilter(src, i);
 			filters |= parsed.bits;
@@ -298,11 +476,39 @@ export function mmlToSfxRow(mml: string): SfxTranspileResult {
 			continue;
 		}
 		if (lower === 'v') {
+			// `v[...]`: a per-note volume ENVELOPE (ADR-0019). `[` after `v` was a
+			// parse error before, so no previously valid MML changes meaning.
+			if (src[i + 1] === '[') {
+				const env = readEnvelope(src, i);
+				state.envelope = env.envelope;
+				i = env.next;
+				continue;
+			}
 			const {value, next} = readInt(src, i + 1);
 			if (value === undefined || value > 7) {
-				throw parseError(src, i, "expected a digit 0-7 after 'v' (volume)");
+				throw parseError(
+					src,
+					i,
+					"expected a digit 0-7 after 'v' (volume), or 'v[...]' (a volume envelope, e.g. v[3 2 2 1/0])",
+				);
 			}
 			state.volume = value;
+			state.envelope = undefined; // a flat volume replaces an envelope
+			i = next;
+			continue;
+		}
+		// `~<N>`: delayed vibrato (ADR-0019). Held notes switch to e2 from their
+		// row N; `~0` turns it off. `~` was an unexpected token before.
+		if (ch === '~') {
+			const {value, next} = readInt(src, i + 1);
+			if (value === undefined || value > SFX_MAX_ROWS - 1) {
+				throw parseError(
+					src,
+					i,
+					`expected a row count 0-${SFX_MAX_ROWS - 1} after '~' (delayed vibrato: ~4 = vibrato from a held note's 5th row, ~0 = off)`,
+				);
+			}
+			state.vibratoDelay = value;
 			i = next;
 			continue;
 		}
@@ -369,22 +575,38 @@ export function mmlToSfxRow(mml: string): SfxTranspileResult {
 		// --- Rest -----------------------------------------------------------------
 		if (lower === 'r') {
 			const dur = readDuration(src, i, i + 1, state.length);
+			const silent: SfxNote[] = [];
 			for (let k = 0; k < dur.rows; k++) {
-				pushNote({pitch: 0, waveform: state.waveform, volume: 0, effect: 0});
+				silent.push({pitch: 0, waveform: state.waveform, volume: 0, effect: 0});
 			}
+			pushRows(silent);
 			collectWarning(dur, warnings);
-			lastNote = undefined;
+			last = undefined;
 			i = dur.next;
 			continue;
 		}
 
 		// --- Tie: extend the previous note ---------------------------------------
 		if (ch === '^') {
-			if (lastNote === undefined) {
+			if (last === undefined) {
 				throw parseError(src, i, "'^' (tie) with no preceding note to extend");
 			}
+			// A tie extends the SAME held note, so it is re-shaped as one longer
+			// note. A modal change in between (`c4 v3 ^4`, `c4 e5 ^2`) used to be
+			// silently ignored; it is now refused, because a held note has one
+			// shape (ADR-0019): use a `v[...]` envelope or a new note instead.
+			const changed = tieStateChange(last.note, state);
+			if (changed !== undefined) {
+				throw new AudioMmlError(
+					'audio-mml-tie-state-change',
+					`'^' (tie) at column ${i + 1} extends a note struck with a different ${changed}: a tie continues the SAME held note, so the ${changed} set between the note and its '^' would be ignored. Shape a held note's volume with an envelope (e.g. "v[3 2 2 1] c8"), or start a new note instead of a tie.`,
+				);
+			}
 			const dur = readDuration(src, i, i + 1, state.length);
-			for (let k = 0; k < dur.rows; k++) pushNote({...lastNote});
+			const total = last.rows + dur.rows;
+			notes.splice(last.start);
+			pushRows(renderHeldNote(last.note, total));
+			last.rows = total;
 			collectWarning(dur, warnings);
 			i = dur.next;
 			continue;
@@ -411,15 +633,18 @@ export function mmlToSfxRow(mml: string): SfxTranspileResult {
 				);
 			}
 			const dur = readDuration(src, i, j, state.length);
-			const note: Note = {
+			const note: HeldNote = {
 				pitch,
 				waveform: state.waveform,
 				volume: state.volume,
+				envelope: state.envelope,
 				effect: state.effect,
+				vibratoDelay: state.vibratoDelay,
 			};
-			for (let k = 0; k < dur.rows; k++) pushNote({...note});
+			const start = notes.length;
+			pushRows(renderHeldNote(note, dur.rows));
 			collectWarning(dur, warnings);
-			lastNote = note;
+			last = {note, start, rows: dur.rows};
 			i = dur.next;
 			continue;
 		}
@@ -427,21 +652,82 @@ export function mmlToSfxRow(mml: string): SfxTranspileResult {
 		throw parseError(src, i, `unexpected token '${ch}'`);
 	}
 
-	const {loopStart, loopEnd} = resolveLoop(
+	return {
+		notes,
+		speed,
+		speedSet,
+		filters,
 		loopStartRow,
 		loopEndRow,
-		notes.length,
-	);
-
-	return {
-		row: emitRow({filters, speed, loopStart, loopEnd, notes}),
-		rows: notes.length,
-		speed,
-		loopStart,
-		loopEnd,
-		filters,
 		roundingWarnings: warnings,
 	};
+}
+
+/**
+ * Names the modal value that changed between a held note and a `^` tie, or
+ * `undefined` when the tie continues the note's own state. Octave and default
+ * length are free to change (a tie keeps its pitch, and `^` reads the length).
+ */
+function tieStateChange(note: HeldNote, state: State): string | undefined {
+	if (note.waveform !== state.waveform) return 'waveform (@)';
+	if (note.effect !== state.effect) return 'effect (e)';
+	if (note.vibratoDelay !== state.vibratoDelay) return 'delayed vibrato (~)';
+	if (JSON.stringify(note.envelope) !== JSON.stringify(state.envelope)) {
+		return 'volume envelope (v[...])';
+	}
+	if (note.envelope === undefined && note.volume !== state.volume) {
+		return 'volume (v)';
+	}
+	return undefined;
+}
+
+/**
+ * Parses a `v[...]` volume envelope at `at` (the `v`): digits 0-7 (one digit =
+ * one row's volume, whitespace optional), and at most one `/` separating the
+ * head from the release tail (ADR-0019).
+ */
+function readEnvelope(
+	src: string,
+	at: number,
+): {envelope: VolumeEnvelope; next: number} {
+	const close = src.indexOf(']', at + 2);
+	if (close < 0) {
+		throw parseError(src, at, "unclosed volume envelope 'v[': missing ']'");
+	}
+	const body = src.slice(at + 2, close);
+	const parts = body.split('/');
+	if (parts.length > 2) {
+		throw parseError(
+			src,
+			at,
+			"a volume envelope takes at most one '/' (head/release), e.g. v[3 2 2/1 0]",
+		);
+	}
+	const digits = (part: string): number[] => {
+		const out: number[] = [];
+		for (const c of part) {
+			if (/\s/.test(c)) continue;
+			if (c < '0' || c > '7') {
+				throw parseError(
+					src,
+					at,
+					`volume envelope values are digits 0-7 (one per row), got '${c}'`,
+				);
+			}
+			out.push(c.charCodeAt(0) - 48);
+		}
+		return out;
+	};
+	const head = digits(parts[0]!);
+	const tail = parts.length === 2 ? digits(parts[1]!) : [];
+	if (head.length === 0) {
+		throw parseError(
+			src,
+			at,
+			'a volume envelope needs at least one value before any /, e.g. v[3 2 2 1]',
+		);
+	}
+	return {envelope: {head, tail}, next: close + 1};
 }
 
 /** A parsed duration: how many rows, whether it rounded, and where parsing resumed. */
@@ -649,12 +935,12 @@ function resolveLoop(
 }
 
 /** Serializes the header + notes into the 168-char `__sfx__` text row (finding A). */
-function emitRow(sfx: {
+export function emitSfxRow(sfx: {
 	filters: number;
 	speed: number;
 	loopStart: number;
 	loopEnd: number;
-	notes: Note[];
+	notes: readonly SfxNote[];
 }): string {
 	// Header: filter-byte(2) speed(2) loopstart(2) loopend(2). The first byte is the
 	// per-SFX FILTER bitfield (finding A.7); its low bit is the cosmetic pitch/

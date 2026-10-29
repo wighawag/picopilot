@@ -7,6 +7,9 @@ import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {mmlToSfxRow, SFX_ROW_LENGTH} from '../engine/audio/index.js';
 import {createCli} from '../cli.js';
 
+/** The .p8 header lines. */
+const HEADER = 'pico-8 cartridge // http://www.pico-8.com\nversion 42\n';
+
 /** A minimal valid cart with a lua + gfx section (to prove they stay untouched). */
 function cartText(sfxBody?: string): string {
 	let text =
@@ -345,5 +348,57 @@ describe('picopilot sfx from-mml: dotted-length rounding is reported', () => {
 		const out = JSON.parse(stdout);
 		expect(out.warnings.length).toBeGreaterThan(0);
 		expect(out.warnings[0]).toContain('rounded');
+	});
+});
+
+describe('picopilot sfx clear', () => {
+	it('clears the named slots and nothing else', async () => {
+		const a = mmlToSfxRow('s4 c').row;
+		const b = mmlToSfxRow('s5 d').row;
+		const c = mmlToSfxRow('s6 e0 c').row;
+		writeFileSync(
+			cartPath,
+			`${HEADER}__lua__\nprint(1)\n__sfx__\n${a}\n${b}\n${c}\n`,
+		);
+		const {stdout, exitCode} = await runSfx([
+			'sfx',
+			'clear',
+			'1,5',
+			'--cart',
+			cartPath,
+			'--json',
+		]);
+		expect(exitCode).toBe(0);
+		const out = JSON.parse(stdout);
+		expect(out.cleared).toEqual([1]);
+		expect(out.alreadyEmpty).toEqual([5]);
+		const text = readFileSync(cartPath, 'utf8');
+		expect(text).toContain(`${a}\n${'0'.repeat(168)}\n${c}\n`);
+	});
+
+	it('clearing the last slots trims them (what PICO-8 writes)', async () => {
+		const a = mmlToSfxRow('s4 c').row;
+		writeFileSync(
+			cartPath,
+			`${HEADER}__lua__\nprint(1)\n__sfx__\n${a}\n${a}\n`,
+		);
+		await runSfx(['sfx', 'clear', '1-63', '--cart', cartPath, '--json']);
+		expect(readFileSync(cartPath, 'utf8')).toBe(
+			`${HEADER}__lua__\nprint(1)\n__sfx__\n${a}\n`,
+		);
+	});
+
+	it('refuses a bad slot list', async () => {
+		writeFileSync(cartPath, `${HEADER}__lua__\nprint(1)\n`);
+		const {stdout, exitCode} = await runSfx([
+			'sfx',
+			'clear',
+			'70',
+			'--cart',
+			cartPath,
+			'--json',
+		]);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('bad-slot-list');
 	});
 });

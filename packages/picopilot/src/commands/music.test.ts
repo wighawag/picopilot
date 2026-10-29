@@ -270,3 +270,122 @@ describe('picopilot music from-patterns: input surface (arg vs --file)', () => {
 		expect(JSON.parse(stdout).code).toBe('cart-not-found');
 	});
 });
+
+/** The __sfx__ body lines of a cart file. */
+function sfxLines(text: string): string[] {
+	const m = text.match(/__sfx__\n([\s\S]*?)(?:\n__|$)/);
+	return (m?.[1] ?? '').split('\n').filter((l) => l.length > 0);
+}
+
+describe('picopilot music from-score (ADR-0020)', () => {
+	const gameSfx = mmlToSfxRow('s4 @3 v6 c e g').row;
+
+	it('writes two songs, reports start patterns, and leaves other content alone', async () => {
+		writeFileSync(cartPath, cartText({sfx: `${gameSfx}\n`}));
+		const score = {
+			songs: [
+				{name: 'title', speed: 16, channels: ['l32 c d', 'o1 l64 c', null]},
+				{name: 'game', speed: 20, channels: [null, 'o1 l16 g d g d']},
+			],
+		};
+		const scoreFile = join(dir, 'score.json');
+		writeFileSync(scoreFile, JSON.stringify(score));
+		const before = readFileSync(cartPath, 'utf8');
+		const {stdout, exitCode} = await runMusic([
+			'music',
+			'from-score',
+			'--file',
+			scoreFile,
+			'--cart',
+			cartPath,
+			'--json',
+		]);
+		expect(exitCode).toBe(0);
+		const out = JSON.parse(stdout);
+		expect(
+			out.songs.map((s: {name: string; startPattern: number}) => [
+				s.name,
+				s.startPattern,
+			]),
+		).toEqual([
+			['title', 0],
+			['game', 2],
+		]);
+		expect(out.patterns).toBe(4);
+		const after = readFileSync(cartPath, 'utf8');
+		// Slot 0 (the game SFX), __lua__ and __gfx__ are byte-identical.
+		expect(sfxLines(after)[0]).toBe(gameSfx);
+		expect(after.split('__sfx__')[0]).toBe(before.split('__sfx__')[0]);
+		// Free slots are used from 63 down; slot 0 is never touched.
+		expect(out.slots.every((s: {slot: number}) => s.slot > 0)).toBe(true);
+		expect(out.slots.every((s: {overwrote: boolean}) => !s.overwrote)).toBe(
+			true,
+		);
+		// The game song's first channel is off in every pattern.
+		const music = musicLines(after);
+		expect(music).toHaveLength(4);
+		for (const line of music.slice(2)) expect(line.slice(3, 5)).toBe('40');
+	});
+
+	it('--slots owns a range: re-running is idempotent (byte-identical cart)', async () => {
+		writeFileSync(cartPath, cartText({sfx: `${gameSfx}\n`}));
+		const score = JSON.stringify({channels: ['l32 c d', 'o1 l64 c']});
+		const argv = [
+			'music',
+			'from-score',
+			score,
+			'--cart',
+			cartPath,
+			'--slots',
+			'40-50',
+			'--json',
+		];
+		const first = await runMusic(argv);
+		expect(first.exitCode).toBe(0);
+		const once = readFileSync(cartPath, 'utf8');
+		await runMusic(argv);
+		expect(readFileSync(cartPath, 'utf8')).toBe(once);
+		const slots = JSON.parse(first.stdout).slots.map(
+			(s: {slot: number}) => s.slot,
+		);
+		expect(slots.every((s: number) => s >= 40 && s <= 50)).toBe(true);
+	});
+
+	it('a bad score never touches the cart', async () => {
+		writeFileSync(cartPath, cartText({sfx: `${gameSfx}\n`}));
+		const before = readFileSync(cartPath, 'utf8');
+		for (const score of [
+			'{',
+			'{"channels":["o5 g"]}',
+			'{"channels":["{c}"]}',
+		]) {
+			const {stdout, exitCode} = await runMusic([
+				'music',
+				'from-score',
+				score,
+				'--cart',
+				cartPath,
+				'--json',
+			]);
+			expect(exitCode, score).not.toBe(0);
+			expect(stdout).toMatch(/audio-(score|mml)-/);
+		}
+		expect(readFileSync(cartPath, 'utf8')).toBe(before);
+	});
+
+	it('refuses a non-contiguous --slots', async () => {
+		writeFileSync(cartPath, cartText());
+		const {stdout, exitCode} = await runMusic([
+			'music',
+			'from-score',
+			'{"channels":["c"]}',
+			'--cart',
+			cartPath,
+			'--slots',
+			'3,9',
+			'--json',
+		]);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('audio-score-bad-slot-range');
+	});
+});

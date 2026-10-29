@@ -1,0 +1,20 @@
+# `music from-score` writes whole songs: picopilot splits, de-duplicates and allocates the SFX, and owns only the slots it is given
+
+`picopilot music from-score` takes a score (one or more SONGS, each up to 4 channels of picopilot-MML of ANY length, plus speed, per-channel filters and loop flags) and writes `__sfx__` and `__music__`: every channel is cut at the same 32-row boundaries (or `patternRows`), a channel silent for a whole pattern becomes `null` (channel off), identical SFX are shared, slots are allocated, and songs are laid out back to back with each song's start pattern reported for `music(n)`. ADR-0008 refused to auto-split a long `sfx from-mml` melody because it would decide slot allocation silently; this is the explicit, separate command that makes that decision visible, so the refusal in `sfx from-mml` stands and now points here. Hand-splitting was the main reason the conquest dogfood needed a 250-line Python script.
+
+## Decisions
+
+- **Slot ownership.** Without `--slots`, the score uses only FREE slots (all 32 note rows zero, whatever the header), filled from 63 downwards so music and game SFX (usually authored from 0 up) meet in the middle, and it never touches a slot with notes. With `--slots <from-to>`, the score OWNS that range: it may overwrite any slot in it and clears the ones it does not use. The range is the recommended mode while iterating, because a re-run then replaces the previous song instead of leaking it. Without a range, slots the previous `__music__` referenced and the new one does not are reported as orphans (with the `sfx clear` command to free them) rather than reclaimed, because a game may also play those SFX with `sfx(n)` and picopilot cannot see that. (Unchanged SFX of the previous song are simply reused in place, see below, so only the ones the edit replaced become orphans.)
+- **Stable allocation.** An SFX whose exact row already sits in a usable slot keeps it (with `--slots`, any slot in the range; without, ANY slot, since reusing an identical row overwrites nothing), so re-running an unchanged score is a byte-identical no-op in both modes and a small edit only rewrites the SFX it changes.
+- **Silence.** A channel silent for a whole pattern is `null` (channel off), not a silent SFX. A pattern silent on EVERY channel keeps one silent SFX on channel 0, because PICO-8 times a pattern by its left-most playing channel and the rest must still last its length.
+- **Songs.** Laid out in score order; `loop` (default true) puts loop-start on the `loopFrom` pattern (default 0) and loop-back on the last pattern, `loop: false` puts stop on the last pattern. PICO-8's loop-back searches back for the nearest loop-start, so each song loops on itself.
+- **One speed per song.** Channels must share it (a mismatching `s<N>` in a channel is refused); `patternRows` under 32 writes the LEN header on every SFX (e.g. 3/4 bars). Per-SFX loop markers (`{`/`}`) are refused in a score: looping is per song.
+- **Custom instruments.** If the score uses `@8`-`@f` (SFX 0-7 as instruments), free-slot allocation skips slots 0-7.
+- **Byte identity.** Only `__music__` (replaced wholesale, as `music from-patterns` does) and the slots written or cleared change. A refused score changes nothing.
+- **`sfx clear <slots>`** is added to free slots explicitly (it used to take an undocumented `sfx from-mml N ""`). A slot with no notes counts as empty and is left byte-identical; `--slots` likewise only clears slots that hold notes.
+
+## Considered Options
+
+- **Reclaim the previous song's slots by default (rejected).** Makes re-runs idempotent without a flag, but would silently overwrite an SFX the game also plays directly. The explicit range gives the same idempotence with consent.
+- **Allocate from slot 0 up (rejected).** Collides with the slots an agent picks first for game SFX.
+- **Store ownership metadata in the cart (rejected).** PICO-8 has no place for it that survives an edit in PICO-8 itself; the range is stated by the caller instead.

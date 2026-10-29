@@ -144,6 +144,7 @@ describe('picopilot doctor', () => {
 			'gfx show / set / render',
 			'sfx',
 			'music',
+			'audio analyze',
 		]);
 	});
 });

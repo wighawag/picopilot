@@ -8,13 +8,20 @@
  * adapter. The `sfx from-mml` command is thin wiring over {@link mmlToSfxRow};
  * the `music from-patterns` command over {@link patternsToMusic}.
  */
-export {mergeSfxRow, setMusicSection, SFX_SLOT_COUNT} from './section.js';
+export {
+	clearSfxSlot,
+	mergeSfxRow,
+	readSfxRows,
+	setMusicSection,
+	SFX_SLOT_COUNT,
+} from './section.js';
 export {
 	AudioMmlError,
 	type AudioMmlErrorCode,
 	DEFAULT_LENGTH,
 	DEFAULT_OCTAVE,
 	DEFAULT_SPEED,
+	emitSfxRow,
 	FILTER_BUZZ,
 	FILTER_DAMPEN_LEVEL,
 	FILTER_DETUNE_1,
@@ -22,13 +29,19 @@ export {
 	FILTER_MAX_LEVEL,
 	FILTER_NOIZ,
 	FILTER_REVERB,
+	type HeldNote,
+	mmlToRows,
+	type MmlRows,
 	mmlToSfxRow,
 	PITCH_MAX,
 	PITCH_MIN,
+	renderHeldNote,
 	type RowRoundingWarning,
 	SFX_MAX_ROWS,
+	type SfxNote,
 	SFX_ROW_LENGTH,
 	type SfxTranspileResult,
+	type VolumeEnvelope,
 } from './sfx.js';
 export {
 	CHANNEL_OFF_BIT,
@@ -45,3 +58,35 @@ export {
 	patternsToMusic,
 	SFX_INDEX_MAX,
 } from './music.js';
+export {
+	EMPTY_SFX_ROW,
+	formatSlots,
+	isFreeSfxRow,
+	musicSfxRefs,
+	parseSlotList,
+	type PlannedSlot,
+	type PlannedSong,
+	planScore,
+	readScore,
+	type Score,
+	type ScoreCartState,
+	type ScoreChannel,
+	ScoreError,
+	type ScoreErrorCode,
+	type ScorePlan,
+	type ScorePlanOptions,
+	type ScoreSong,
+} from './score.js';
+export {
+	type AnalysisWarning,
+	analyzeAudio,
+	type AnalyzeOptions,
+	type AudioAnalysis,
+	AudioAnalyzeError,
+	decodeWav,
+	type DecodedWav,
+	encodeWav16,
+	FRAME_SIZE,
+	SILENCE_RMS,
+	THRESHOLDS,
+} from './analyze.js';

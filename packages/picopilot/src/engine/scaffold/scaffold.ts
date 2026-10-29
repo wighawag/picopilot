@@ -94,6 +94,9 @@ curated from PICO-8's manual for the things models get wrong without a reminder.
 - Sprites: 256 8x8 sprites in a base bank (0..127) plus a shared bank (128..255).
 - Map: 128x32 tiles + a shared half that ALIASES sprites 128..255 (see below).
 - Sound: 4 channels, 64 SFX slots; music is patterns of up to 4 SFX references.
+  Compose it as text (\`picopilot sfx from-mml\`, \`music from-score\`), then
+  \`audio render --analyze\` to judge it by numbers; the \`picopilot-audio\` skill
+  carries the loop and the taste rules (soft, low, varied, under the SFX).
 - Numbers: 16.16 fixed point, range \`-32768.0 .. 32767.99\`.
 
 ## The execution loop (every cart)
@@ -239,7 +242,8 @@ in \`picopilot.json\`), so you never silently destroy map data you cannot see.
   \`color(col)\`, \`fillp(mask)\`, \`tline(...)\`, \`flip()\`.
 - **Map / flags:** \`mget(x,y)\`, \`mset(x,y,v)\`, \`fget(n,[f])\`, \`fset(n,[f],v)\`.
 - **Input:** \`btn([i,[p]])\`, \`btnp([i,[p]])\` (buttons 0..5 = left,right,up,down,O/Z,X).
-- **Audio:** \`sfx(n,[channel,[offset]])\`, \`music([n,[fade,[mask]]])\`.
+- **Audio:** \`sfx(n,[channel,[offset]])\`, \`music([n,[fade,[mask]]])\` (mask 7 =
+  channels 0-2, so channel 3 stays free for \`sfx\`).
 - **Math:** \`abs\`, \`flr\` (\`-flr(-x)\` = ceil), \`min\`, \`max\`, \`mid\`, \`rnd(x)\`,
   \`srand(x)\`, \`sgn\`, \`sqrt\`, \`sin(x)\`/\`cos(x)\` (range 0..1, sin inverted),
   \`atan2(x,y)\`.

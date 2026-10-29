@@ -10,6 +10,7 @@ import {homedir, tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Cli} from 'incur';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import {encodeWav16} from '../engine/audio/analyze.js';
 import {mmlToSfxRow} from '../engine/audio/sfx.js';
 import {mergeSfxRow} from '../engine/audio/section.js';
 import {Cart} from '../engine/cart/index.js';
@@ -20,7 +21,12 @@ import type {
 	RunOptions,
 } from '../engine/pico8/index.js';
 import {displayUnavailable, pico8NotFound} from '../engine/pico8/index.js';
-import {type Pico8AdapterFactory, registerAudio} from './audio.js';
+import {
+	type Pico8AdapterFactory,
+	RECORD_STARTUP_MARGIN_MS,
+	registerAudio,
+	resolveRecordBackstop,
+} from './audio.js';
 
 const HEADER = 'pico-8 cartridge // http://www.pico-8.com\nversion 42\n';
 
@@ -351,5 +357,168 @@ describe('audio record/render: headless (ADR-0017)', () => {
 		expect(out.display).toBe('Xvfb');
 		expect(out.noAudioReason).toBe('the backstop fired');
 		expect(out.pico8LogTail).toContain('main.lua');
+	});
+});
+
+describe('audio record/render: the backstop follows the record window', () => {
+	it('defaults to the window plus a startup margin (a 24 s window is not killed at 30 s)', async () => {
+		for (const argv of [
+			[
+				'audio',
+				'render',
+				cartPath,
+				'--pattern',
+				'0',
+				'--seconds',
+				'24',
+				'--json',
+			],
+			['audio', 'record', cartPath, '--seconds', '24', '--json'],
+		]) {
+			const seen: {record?: RecordOptions} = {};
+			const {exitCode} = await runAudio(
+				() => stubAdapter(recorded(undefined), seen),
+				argv,
+			);
+			expect(exitCode).toBe(0);
+			expect(seen.record?.backstopMs).toBe(24_000 + RECORD_STARTUP_MARGIN_MS);
+		}
+	});
+
+	it('an explicit backstop that cannot fit the window is refused up front', async () => {
+		const seen: {record?: RecordOptions} = {};
+		const {stdout, exitCode} = await runAudio(
+			() => stubAdapter(recorded(undefined), seen),
+			[
+				'audio',
+				'render',
+				cartPath,
+				'--pattern',
+				'0',
+				'--seconds',
+				'28',
+				'--backstop-ms',
+				'30000',
+				'--json',
+			],
+		);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).toContain('audio-backstop-too-small');
+		expect(stdout).toContain('33000');
+		expect(seen.record).toBeUndefined(); // PICO-8 was never launched
+	});
+
+	it('an explicit backstop with room for startup is honoured', async () => {
+		const seen: {record?: RecordOptions} = {};
+		await runAudio(
+			() => stubAdapter(recorded(undefined), seen),
+			[
+				'audio',
+				'record',
+				cartPath,
+				'--seconds',
+				'4',
+				'--backstop-ms',
+				'12000',
+				'--json',
+			],
+		);
+		expect(seen.record?.backstopMs).toBe(12_000);
+	});
+
+	it('resolveRecordBackstop', () => {
+		expect(resolveRecordBackstop(8, undefined)).toEqual({ok: true, ms: 38_000});
+		expect(resolveRecordBackstop(8, 13_000)).toEqual({ok: true, ms: 13_000});
+		expect(resolveRecordBackstop(8, 12_999).ok).toBe(false);
+	});
+});
+
+/** Writes a WAV of `seconds` of a sine at `amp` to `path`. */
+function writeSineWav(path: string, seconds: number, hz: number, amp: number) {
+	const samples = new Float32Array(Math.round(seconds * 22050));
+	for (let i = 0; i < samples.length; i++) {
+		samples[i] = amp * Math.sin((2 * Math.PI * hz * i) / 22050);
+	}
+	writeFileSync(path, encodeWav16(samples, 22050));
+}
+
+describe('audio analyze (no PICO-8 needed)', () => {
+	it('reports loudness/brightness/dynamics and plain-language warnings', async () => {
+		const wav = join(dir, 'm.wav');
+		writeSineWav(wav, 4, 440, 0.3);
+		const {stdout, exitCode} = await runAudio(
+			() => stubAdapter(pico8NotFound()),
+			['audio', 'analyze', wav, '--json'],
+		);
+		expect(exitCode).toBe(0);
+		const out = JSON.parse(stdout);
+		expect(out.skippedSeconds).toBe(1);
+		expect(out.loudness.meanRms).toBeCloseTo(0.212, 2);
+		expect(Math.abs(out.brightness.centroidHz - 440)).toBeLessThan(30);
+		const codes = out.warnings.map((w: {code: string}) => w.code);
+		expect(codes).toContain('loud');
+		expect(codes).toContain('monotonous');
+	});
+
+	it('--against compares the music with a reference SFX', async () => {
+		const music = join(dir, 'm.wav');
+		const sfx = join(dir, 's.wav');
+		writeSineWav(music, 4, 330, 0.05);
+		writeSineWav(sfx, 1, 660, 0.3);
+		const {stdout} = await runAudio(
+			() => stubAdapter(pico8NotFound()),
+			['audio', 'analyze', music, '--against', sfx, '--json'],
+		);
+		expect(JSON.parse(stdout).against.musicOverReferenceDb).toBeLessThan(-10);
+	});
+
+	it('a missing or bad WAV is a structured error', async () => {
+		const bad = join(dir, 'bad.wav');
+		writeFileSync(bad, 'not a wav');
+		for (const p of [bad, join(dir, 'missing.wav')]) {
+			const {stdout, exitCode} = await runAudio(
+				() => stubAdapter(pico8NotFound()),
+				['audio', 'analyze', p, '--json'],
+			);
+			expect(exitCode).not.toBe(0);
+			expect(stdout).toContain('audio-analyze-bad-wav');
+		}
+	});
+
+	it('render --analyze attaches the analysis of the captured WAV', async () => {
+		const wav = join(dir, 'cap.wav');
+		writeSineWav(wav, 3, 440, 0.05);
+		const {stdout, exitCode} = await runAudio(
+			() => stubAdapter(recorded(wav)),
+			['audio', 'render', cartPath, '--sfx', '0', '--analyze', '--json'],
+		);
+		expect(exitCode).toBe(0);
+		const out = JSON.parse(stdout);
+		expect(out.captured).toBe(true);
+		expect(out.analysis.loudness.meanRms).toBeCloseTo(0.035, 2);
+	});
+
+	it('without --analyze there is no analysis', async () => {
+		const wav = join(dir, 'cap.wav');
+		writeSineWav(wav, 3, 440, 0.05);
+		const {stdout} = await runAudio(
+			() => stubAdapter(recorded(wav)),
+			['audio', 'record', cartPath, '--json'],
+		);
+		expect(JSON.parse(stdout).analysis).toBeUndefined();
+	});
+});
+
+describe('render --analyze on an SFX target', () => {
+	it('analyzes the whole capture (no 1 s skip) with sfx rules', async () => {
+		const wav = join(dir, 'blip.wav');
+		writeSineWav(wav, 1.5, 440, 0.3);
+		const {stdout} = await runAudio(
+			() => stubAdapter(recorded(wav)),
+			['audio', 'render', cartPath, '--sfx', '0', '--analyze', '--json'],
+		);
+		const out = JSON.parse(stdout);
+		expect(out.analysis.skippedSeconds).toBe(0);
+		expect(out.analysis.warnings).toEqual([]);
 	});
 });

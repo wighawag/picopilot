@@ -1,0 +1,5 @@
+---
+"picopilot": minor
+---
+
+New `picopilot music from-score` writes whole songs: give it a JSON score of one or more songs (for example a title song and an in-game song), each up to 4 channels of picopilot-MML of any length plus a speed, per-channel filters and loop flags, and it splits every channel into aligned 32-row SFX (or `patternRows`), turns a channel that is silent for a whole pattern off, shares identical SFX, allocates slots and writes `__sfx__` and `__music__`. It reports each song's start pattern (for `music(n)`), its length in seconds, and which slot plays where. By default it only uses empty slots, from 63 down, and never touches a slot with notes; `--slots 16-63` gives the music a range it owns, overwriting and clearing it on every run. In both modes an SFX already present byte-for-byte keeps its slot, so re-running an unchanged score changes nothing. New `picopilot sfx clear <slots>` empties slots (`5`, `16-63`, `3,5,9`). `sfx from-mml` still refuses more than 32 rows and now points at `from-score` (ADR-0020).

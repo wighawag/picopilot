@@ -4,9 +4,14 @@ import {Cli, z} from 'incur';
 
 import {
 	AudioMmlError,
+	clearSfxSlot,
+	formatSlots,
+	isFreeSfxRow,
 	mergeSfxRow,
 	mmlToSfxRow,
+	parseSlotList,
 	PITCH_MAX,
+	readSfxRows,
 	SFX_MAX_ROWS,
 	SFX_SLOT_COUNT,
 } from '../engine/audio/index.js';
@@ -58,7 +63,7 @@ function buildSfxGroup(): Cli.Cli {
 
 	sfx.command('from-mml', {
 		description:
-			'Transpile picopilot-MML text into one __sfx__ slot (0-63) and merge it into the cart (only that slot changes). picopilot-MML is TRACKER-ROW based: a length is a ROW COUNT (l4 = 4 rows), NOT a musical note value, and there is NO tempo/BPM (PICO-8 measures in ticks/row via `s<N>` speed). Notes carry per-note waveform (@0-7, @8-f = custom SFX-instrument), volume (v0-7), and effect (e0-7) that a score notation cannot express. SFX-level FILTER directives reach DESIGNED sounds (explosion/engine/pad): !dampen[2] (low-pass body), !reverb (echo tail), !noiz (@6 white noise), !buzz, !detune1/!detune2. Out-of-range pitch (below C0 / above D#5), >32 rows, and a bad filter level are refused loudly, never silently clamped.',
+			'Transpile picopilot-MML text into one __sfx__ slot (0-63) and merge it into the cart (only that slot changes). picopilot-MML is TRACKER-ROW based: a length is a ROW COUNT (l4 = 4 rows), NOT a musical note value, and there is NO tempo/BPM (PICO-8 measures in ticks/row via `s<N>` speed). Notes carry per-note waveform (@0-7, @8-f = custom SFX-instrument), volume (v0-7), and effect (e0-7) that a score notation cannot express. A held note (c8) is ONE note: fade in/out and drop land once per held note, not on every row (ADR-0019); shape its volume with an envelope v[3 2 2 1/0] (one digit per row, last value held, after / = release) and delay vibrato with ~N (vibrato from row N). For melodies over 32 rows use `music from-score`. SFX-level FILTER directives reach DESIGNED sounds (explosion/engine/pad): !dampen[2] (low-pass body), !reverb (echo tail), !noiz (@6 white noise), !buzz, !detune1/!detune2. Out-of-range pitch (below C0 / above D#5), >32 rows, and a bad filter level are refused loudly, never silently clamped.',
 		args: z.object({
 			slot: z.coerce
 				.number()
@@ -70,7 +75,7 @@ function buildSfxGroup(): Cli.Cli {
 				.string()
 				.optional()
 				.describe(
-					'The picopilot-MML source (e.g. "s16 @1 v6 c d e f"). Omit and pass --file to read from a file instead. Modal state: @ waveform, v volume, e effect, o octave, l default length (all sticky). Durations are ROWS: c4 = 4 rows (held via tie rows). Loop with {..}; a lone { marks the pattern LEN. SFX filters (per-SFX, place anywhere): !dampen/!dampen2, !reverb, !noiz, !buzz, !detune1/!detune2 (e.g. "!dampen !reverb @6 v7 o3 e c o1 g" = an explosion).',
+					'The picopilot-MML source (e.g. "s16 @1 v6 c d e f"). Omit and pass --file to read from a file instead. Modal state: @ waveform, v volume or v[...] envelope, e effect, ~N delayed vibrato, o octave, l default length (all sticky). Durations are ROWS: c4 = one note held 4 rows. Loop with {..}; a lone { marks the pattern LEN. SFX filters (per-SFX, place anywhere): !dampen/!dampen2, !reverb, !noiz, !buzz, !detune1/!detune2 (e.g. "!dampen !reverb @6 v7 o3 e c o1 g" = an explosion).',
 				),
 		}),
 		options: z.object({
@@ -136,6 +141,11 @@ function buildSfxGroup(): Cli.Cli {
 				args: {slot: 3, mml: 's7 !dampen2 !reverb @6 v7 o3 e c o1 g c'},
 			},
 			{
+				description:
+					'A soft lead note: held 8 rows with a decaying envelope and vibrato from row 4',
+				args: {slot: 6, mml: 's16 !dampen @0 ~4 v[3 3 2 2 2 1/1 0] o2 a8'},
+			},
+			{
 				description: 'Read a longer source from a file',
 				args: {slot: 1},
 				options: {file: 'lead.mml'},
@@ -199,28 +209,40 @@ function buildSfxGroup(): Cli.Cli {
 								}
 							: e.code === 'audio-mml-sfx-overflow'
 								? {
-										description: `One SFX holds at most ${SFX_MAX_ROWS} rows; split longer melodies:`,
+										description: `One SFX holds at most ${SFX_MAX_ROWS} rows; for longer melodies:`,
 										commands: [
 											{
-												command: 'sfx from-mml <other-slot> "<rest>"',
+												command: 'music from-score --file score.json',
 												description:
-													'Author the remainder as another SFX, then arrange both with `music from-patterns`.',
+													'Write each voice at any length; picopilot splits it into SFX + patterns.',
 											},
 										],
 									}
-								: e.code === 'audio-mml-filter-level-out-of-range'
+								: e.code === 'audio-mml-tie-state-change'
 									? {
-											description: 'The SFX filters + their valid levels:',
+											description:
+												'A tie continues one held note; shape it instead:',
 											commands: [
 												{
-													command:
-														'sfx from-mml <slot> "!dampen[2] !reverb !noiz !buzz !detune1/!detune2 ..."',
+													command: 'sfx from-mml <slot> "v[3 2 2 1] c8"',
 													description:
-														'!dampen has 2 levels (!dampen/!dampen2); !reverb/!noiz/!buzz are on/off; !detune needs 1 or 2.',
+														'A volume envelope: one digit per row, last value held.',
 												},
 											],
 										}
-									: undefined;
+									: e.code === 'audio-mml-filter-level-out-of-range'
+										? {
+												description: 'The SFX filters + their valid levels:',
+												commands: [
+													{
+														command:
+															'sfx from-mml <slot> "!dampen[2] !reverb !noiz !buzz !detune1/!detune2 ..."',
+														description:
+															'!dampen has 2 levels (!dampen/!dampen2); !reverb/!noiz/!buzz are on/off; !detune needs 1 or 2.',
+													},
+												],
+											}
+										: undefined;
 					return error({
 						code: e.code,
 						message: e.message,
@@ -278,6 +300,91 @@ function buildSfxGroup(): Cli.Cli {
 						],
 					},
 				},
+			);
+		},
+	});
+
+	sfx.command('clear', {
+		description:
+			'Clear SFX slots back to EMPTY (no notes). Only the named slots change; every other slot and section stays byte-identical. Use it to free slots for `music from-score` or to remove a leftover song.',
+		args: z.object({
+			slots: z
+				.string()
+				.describe(
+					'The slots to clear: one slot ("5"), a range ("16-63"), or a list ("3,5,16-20").',
+				),
+		}),
+		options: z.object({
+			cart: z
+				.string()
+				.default('main.p8')
+				.describe(
+					'The .p8 cart to edit. Defaults to main.p8 in the current folder.',
+				),
+		}),
+		output: z.object({
+			cart: z
+				.string()
+				.describe('The absolute path of the cart that was written.'),
+			cleared: z
+				.array(z.number())
+				.describe('The slots that held notes and are now empty.'),
+			alreadyEmpty: z
+				.array(z.number())
+				.describe(
+					'The named slots that had no notes already (left byte-identical).',
+				),
+		}),
+		examples: [
+			{description: 'Clear slot 11', args: {slots: '11'}},
+			{
+				description: 'Clear a whole music range of a cart',
+				args: {slots: '16-63'},
+				options: {cart: 'game.p8'},
+			},
+		],
+		run({args, options, error, ok}) {
+			const slots = parseSlotList(args.slots);
+			if (slots === undefined) {
+				return error({
+					code: 'bad-slot-list',
+					message: `"${args.slots}" is not a slot list within 0-${SFX_SLOT_COUNT - 1}: use "5", "16-63" or "3,5,16-20".`,
+					exitCode: 1,
+				});
+			}
+			const cartPath = resolvePath(options.cart);
+			const loaded = loadCart(cartPath);
+			if (!loaded.ok) {
+				return error({code: loaded.code, message: loaded.message, exitCode: 1});
+			}
+			const before = readSfxRows(loaded.cart);
+			const cleared: number[] = [];
+			const alreadyEmpty: number[] = [];
+			for (const slot of slots) {
+				// A note-less slot is already empty: leave its bytes (header) alone.
+				if (isFreeSfxRow(before[slot])) {
+					alreadyEmpty.push(slot);
+					continue;
+				}
+				cleared.push(slot);
+				clearSfxSlot(loaded.cart, slot);
+			}
+			writeFileSync(cartPath, loaded.cart.serialize());
+			return ok(
+				{cart: cartPath, cleared, alreadyEmpty},
+				cleared.length > 0
+					? {
+							cta: {
+								description: `Cleared SFX ${formatSlots(cleared)}. If __music__ still references them, those channels are now silent:`,
+								commands: [
+									{
+										command: 'verify',
+										description: 'Static gate: the cart still parses.',
+									},
+								],
+							},
+						}
+					: undefined,
 			);
 		},
 	});

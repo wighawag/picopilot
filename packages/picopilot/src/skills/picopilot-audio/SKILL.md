@@ -1,190 +1,80 @@
 ---
 name: picopilot-audio
-description: Compose PICO-8 sound as text with picopilot. The #1 reframe (no tempo, compose in TRACKER ROWS at one speed), the picopilot-MML grammar (waveform/volume/effect per note + the 5 SFX filters for designed sounds like explosion/engine/pad), structural music assembly from SFX references, the loud refusals, and the compose to hear ears loop. Use when authoring __sfx__ / __music__.
+description: Compose PICO-8 sound and music as text with picopilot, and judge it without ears. Covers tracker-row picopilot-MML (held notes, volume envelopes, the 5 SFX filters), whole songs with `music from-score`, the render then analyze loop, and the taste rules that keep game music soft, varied and under the SFX. Use when authoring __sfx__ / __music__.
 ---
 
 # picopilot audio
 
-SFX and music live in the cart as hex blobs you cannot read. picopilot lets you
-compose sound as TEXT you can reason about, then transpiles it into `__sfx__` /
-`__music__`. (See `picopilot-overview` for the `#include` discipline; never
-hand-write the audio hex.) The exact byte layout + the full grammar/mapping
-tables are the canonical reference in
-`work/notes/findings/pico8-audio-sfx-music-layout-and-mml-subset.md` (Part A =
-layout, Part B = the picopilot-MML grammar + mapping). This skill carries what a
-model gets WRONG, not the whole finding.
+You cannot hear, so you compose sound as TEXT (picopilot-MML), let picopilot write `__sfx__` / `__music__`, and judge the result with NUMBERS from `audio analyze`. Never hand-write the audio hex. The byte layout and full grammar live in `work/notes/findings/pico8-audio-sfx-music-layout-and-mml-subset.md`; the measurements behind the taste rules in `work/notes/findings/pico8-audio-music-taste-and-analysis.md`.
 
-## Read this first: no tempo, compose in TRACKER ROWS (ADR-0008)
+## The loop: compose, render, analyze, iterate
 
-The one thing a model gets wrong: it reaches for sheet music. PICO-8 has NO
-per-note duration and NO tempo/BPM. An SFX is a column of up to 32 tracker ROWS,
-and ALL rows share ONE SFX `speed` (ticks/row, set with `s<N>`). So a
-picopilot-MML length is a ROW COUNT, not a musical note value: `c4` = the note C
-held for 4 ROWS (emitted as the note plus 3 tie rows), NOT a quarter note. There
-is no tempo token; a tempo-style input is refused with a clear message, not
-guessed at. Consequences you must design around:
+1. **Compose.** Game SFX: `picopilot sfx from-mml <slot> "<mml>"` (one sound, up to 32 rows). Music: `picopilot music from-score --file score.json --slots 16-63` (whole songs, any length).
+2. **Render.** `picopilot audio render --pattern <startPattern> --seconds <n> --analyze`. Record more than twice the song's `seconds` (from-score reports it, and its next-step hint does this) so the loop length is measurable. `--sfx <slot> --analyze` analyzes a one-shot with only the checks that apply to it (near-silent, near-clipping).
+3. **Analyze.** Read `analysis.warnings` and the numbers. Check music against an SFX with `picopilot audio analyze music.wav --against sfx.wav`.
+4. **Iterate** until the music analysis has no warnings and the score follows the taste rules below. A clean analysis is the done bar; "it compiled" is not.
 
-- **No true sustain across rows.** A held note is RE-STRUCK each following row
-  (PICO-8 has no cross-row sustain bit). For a smooth hold use effect `e1`
-  (slide) or a low `s<N>` speed, not a long length. Do not expect a legato tie.
-- **Dotted notes round to whole rows.** `c4.` = 6 rows; a fractional result
-  rounds to the nearest whole row and the result WARNS. Rows are integers.
-- **32-row hard cap.** A melody past 32 rows is refused (see below). Splitting it
-  into several SFX arranged by a music pattern is a STRUCTURAL choice YOU make,
-  not something the transpiler does silently.
+## Tracker rows, not sheet music (ADR-0008)
 
-## The ears loop: `sfx from-mml` -> `music from-patterns` -> `audio render`
+PICO-8 has no tempo and no per-note duration. An SFX is up to 32 ROWS at one `speed` (`s<N>` ticks per row, 1/120 s each). A length is a ROW COUNT: `c4` is C held for 4 rows. A tempo token is refused.
 
-This is the audio analogue of the `picopilot-art` render/look/set eyes loop:
+**A held note is ONE note (ADR-0019).** PICO-8 plays consecutive same-pitch rows as one continuous tone, so picopilot shapes a held note across its rows: fade in (`e4`) on its first row, fade out (`e5`) as a volume ramp ending on its last row, drop (`e3`) as a one-row hit then silence; vibrato, slide and arpeggio continue. Separate one-row notes (`e5 c c c c`) still re-trigger, which is how you write repeated plucks. Shape held notes with:
 
-1. `picopilot sfx from-mml <slot> "<mml>"`: compose one sound as text.
-2. `picopilot music from-patterns "<json>"`: arrange SFX into a song.
-3. `picopilot audio render`: RECORD a WAV and HEAR it, then iterate.
+- **`v[...]` volume envelope**, one digit per row, last value held, the part after `/` is the release on each note's last rows: `v[3 2 2 2 1/1 0] a12`. Modal; `v<N>` clears it.
+- **`~N` delayed vibrato**: rows from N on get vibrato, so a long note starts plain and blooms: `~6`. `~0` turns it off.
 
-These steps are wired as CTAs (a merged SFX or song points you at `verify` then
-`audio render`), so follow the suggested next command.
+The `e` trap: `e0`-`e7` is an EFFECT, so note E with a length is `l8 e`, never `e8` (refused) or `e4` (silently effect 4).
 
-## `audio render` / `audio record`: get a WAV by RECORDING (ADR-0009)
+## Taste: what makes game music pleasant (measured)
 
-PICO-8 has NO working offline WAV export (it SIGFPEs upstream), so picopilot gets audio-to-WAV the only way that works: by RECORDING a running session (`extcmd("audio_rec")`/`audio_end`). Two commands, both PICO-8-gated and both REAL-TIME recordings of playback, NOT deterministic offline exports. They work headless (no display, no sound card): PICO-8 records its own mixer, not the audio device, and when there is no display picopilot runs the session on a private virtual display by itself (ADR-0017). You do not need to do anything for that.
+These rules come from a soundtrack a listener called shrill and grating, a revision called "far too violent", and the accepted versions (the taste finding has the numbers).
 
-- **`picopilot audio render`** injects a THROWAWAY play-harness for a chosen
-  target and records it, so you write NO playback code. Pick the target with
-  `--sfx <n>` (one SFX slot), `--pattern <p>` (one music pattern), or NEITHER
-  (the whole song, `music 0`). The record window is derived from an `--sfx`
-  target's speed+rows; override any target with `--seconds <n>`. An empty slot or
-  out-of-range target is REFUSED loudly (nothing to render), never a silent
-  recording of silence.
-- **`picopilot audio record <cart>`** records the cart's OWN playback (it keeps
-  the cart's code and appends a cooperative recorder); use it to capture a whole
-  run's audio. `picopilot run --record-audio` does the same alongside a normal
-  `run` (a WAV next to the screenshots).
+- **Register.** Lead at `o3` or below (`o2 a` is 440 Hz), bass around `o1`, pads `o1`-`o2`. A lead and arpeggio at `o4` on square/pulse is what made the first track shrill.
+- **Timbre.** Soft: triangle `@0` and a quiet dampened organ `@5`. Harsh at volume: square `@3`, pulse `@4`, saw `@2`. Put `!dampen` on music voices. Noise drums and drop-kicks (`e3`) read as aggressive at default volumes; leave drums out of ambient music, or keep them at `v1`-`v2`.
+- **Density.** Rests are music. Write held notes with envelopes and gaps, not wall-to-wall 16th-note arpeggios at one volume.
+- **Form.** Title and in-game are DIFFERENT songs. In-game loops run about a minute, with sections (A/B), and a melody that plays only in some bars (a silent channel in a pattern costs nothing: it becomes OFF).
+- **Volume headroom.** Music mostly `v1`-`v2`, `v3` only on attacks; SFX `v4`-`v7` sit on top.
+- **Leave a channel for SFX.** Write music on channels 0-2 and play it with a mask: `music(n, fade, 7)` (channels 0-2), so `sfx()` always has channel 3.
 
-The WAV goes to an isolated dir (`--wav-dir`, default a temp dir), never
-`~/Desktop` or the carts root (the `audio_end(1)`-saves-to-the-current-folder
-trap; picopilot steers it with PICO-8's `root_path`). PICO-8 absent -> a
-structured `pico8-not-found` (remedy `set PICO8_PATH or install PICO-8`), never a
-crash.
+The analyzer's thresholds, for reading its output: mean RMS above 0.12 is loud (accepted music 0.07-0.10); centroid above 900 Hz or more than 8 % of energy above 2 kHz is shrill (accepted: under 500 Hz, about 0.2 %); dynamic range under 4 dB is monotonous (accepted 7-8 dB); a loop under 20 s is repetitive; with `--against`, music should sit at least 3 dB under the SFX.
 
-When a recording produces no WAV (`captured:false`), the result says why: `noAudioReason` (the backstop fired before the recorder finished, PICO-8 exited early, or the capture was empty) and `pico8LogTail` (the end of PICO-8's own log, where load errors show up). Read both before retrying; a cart that fails to load never reaches the end of the recording, so run `picopilot verify` on it. If the machine has no display AND no Xvfb, the command fails up front with `display-unavailable`, whose message names the package to install; `picopilot doctor` reports the same thing before you try.
+## `music from-score`: whole songs (ADR-0020)
 
-## `sfx from-mml`: one MML string -> one SFX slot
+The score is JSON: songs, each up to 4 channels of picopilot-MML of ANY length.
 
-`picopilot sfx from-mml <slot> "<mml>"` transpiles picopilot-MML into one
-`__sfx__` slot (`0-63`) and merges it (only that slot changes; every other
-section stays byte-identical). Cart is `--cart` (default `main.p8`); pass a
-longer source with `--file` (give EITHER the argument OR `--file`).
+```json
+{"songs": [
+  {"name": "title", "speed": 16, "channels": [
+    {"filters": "!dampen", "mml": "@0 ~6 v[3 2 2 2 1/1 0] o2 a12 > d4 f8 l8 e | d16 c8 < a+8"},
+    {"filters": "!dampen", "mml": "@0 v[2 2 2 1 1 1/0] o1 d16 a16 | < a+16 > f16"},
+    null]},
+  {"name": "game", "speed": 20, "loopFrom": 0, "channels": ["...", "...", "..."]}
+]}
+```
 
-Write notes AND their waveform/volume/effect in MML: that is exactly the
-information PICO-8 needs and hand-written hex hides. This is why picopilot-MML,
-not ABC: ABC is score-level and cannot name a per-note waveform, volume, or
-effect, so an ABC-authored SFX is timbre-less ("blind audio in a nicer font").
+picopilot cuts every channel at the same 32-row boundaries (`patternRows` for other bar lengths), turns a channel silent for a whole pattern into OFF, shares identical SFX, writes `__sfx__` + `__music__`, and reports each song's `startPattern` (play it with `music(startPattern, 0, 7)`), its `seconds`, and which slot holds what. Per song: `speed` (shared by its channels), `loop` (default true; false stops at the end), `loopFrom`. `|` bars are cosmetic: use them to check every channel's bars add up to the same rows.
 
-### The picopilot-MML grammar in brief
+Slots: pass `--slots 16-63` (a range the music OWNS: overwritten and cleared on every run, so re-runs are clean). Without it, only empty slots are used, from 63 down, and nothing with notes is touched. `picopilot sfx clear <slots>` empties slots (`5`, `16-63`, `3,5,9`).
 
-Modal state (sticky until changed): `@<0-7>` waveform (`@8`-`@f` = SFX 0-7 as a
-custom instrument), `v<0-7>` volume, `e<0-7>` effect (0 none, 1 slide, 2 vibrato,
-3 drop, 4 fade in, 5 fade out, 6 arpeggio fast, 7 arpeggio slow), `o<0-5>` octave
-(default `o2`), `l<N>` default length in rows, `>`/`<` octave shift. A bare note
-(`c d e f g a b`, `+`/`#` sharp, `-` flat) emits one row in the current state.
-`r<N>` = N silent rows; `^<N>` extends the previous note; `s<N>` = SFX speed
-(default `s16`); `{`/`}` = loop markers (a LONE `{` marks the pattern LEN, the
-finding's LEN special case). SFX-level FILTERS (per-SFX, order-free): `!dampen`/
-`!dampen2`, `!reverb`, `!noiz`, `!buzz`, `!detune1`/`!detune2` (see the filters
-section below). Whitespace + `|` bars are cosmetic. See finding Part B / A.7 for
-the full tables.
+`music from-patterns '<json>'` still exists for arranging hand-made SFX: a list of `{"channels":[c0,c1,c2,c3], loopStart?, loopBack?, stop?}` where a channel is an SFX index or `null` (OFF, which is different from SFX 0). Music is structural either way: melody lives in SFX, `__music__` only references them.
 
-Note `e` is BOTH a note letter AND the effect prefix: `e0`-`e7` is the EFFECT; a
-bare `e` is note E (hold it with `l4 e`, not `e4`). Effects have NO letter
-mnemonics (the finding's `sl`/`vb`/... sugar did NOT ship: each collides with a
-real note-plus-length sequence); use the numeric `e0`-`e7`.
+## `sfx from-mml`: one sound
 
-Example: `picopilot sfx from-mml 0 "s8 @3 v6 e2 c e g > c"` is a square-wave
-(`@3`) vibrato (`e2`) arpeggio at speed 8.
+Modal (sticky) state: `@0`-`@7` waveform (0 triangle, 1 tilted saw, 2 saw, 3 square, 4 pulse, 5 organ, 6 noise, 7 phaser; `@8`-`@f` = SFX 0-7 as an instrument), `v0`-`v7` or `v[...]`, `e0`-`e7` effect (1 slide, 2 vibrato, 3 drop, 4 fade in, 5 fade out, 6/7 arpeggio fast/slow), `~N`, `o0`-`o5` octave (default `o2`), `l<N>` default length, `>`/`<` octave shift. Notes `c d e f g a b` with `+`/`#`/`-`; `r<N>` rest; `^<N>` extends the previous note; `s<N>` speed; `{`/`}` loop (a lone `{` sets the LEN). picopilot-MML, not ABC, because ABC cannot name a per-note waveform, volume or effect.
 
-### SFX FILTERS: how to reach DESIGNED sounds (explosion, engine, pad)
+**Filters make DESIGNED sounds** (per SFX, anywhere in the string): `!dampen`/`!dampen2` low-pass body, `!reverb` echo tail, `!noiz` (only on `@6`), `!buzz`, `!detune1` (flange) / `!detune2` (octave). An explosion is `!dampen2 !reverb @6` over a falling pitch and volume: `s6 !dampen2 !reverb @6 o3 v7 g o1 c o0 g v6 e v5 c v4 g v3 c v2 g v1 c`.
 
-Pitch + waveform + volume + effect get you notes; the 5 per-SFX FILTERS are what
-make a sound DESIGNED. They are `!`-prefixed SFX-level directives (per-SFX like
-`s<N>`, place them anywhere in the string, order-free): they set the SFX's first
-header byte and change nothing per-note. Use them when a boom reads as a
-machine-gun rattle, or an engine as a buzz: no amount of pitch/volume MML can
-synthesize the low BODY or resonant TAIL, only these filters can.
+## `audio render` / `record` / `analyze`
 
-- **`!dampen` / `!dampen2`** — a low-pass at 2 levels. This is the BODY/weight:
-  turns raw `@6` noise from a hiss/rattle into a "boom". `!dampen2` is heavier.
-  The single biggest lever for an explosion.
-- **`!reverb`** — an echo/tail. The resonant TAIL that makes a boom ring out (and
-  a pad bloom). On/off (a single switch, see the caveat below).
-- **`!noiz`** — pure white-noise texture; applies ONLY to instrument 6 (`@6`), a
-  no-op on any other waveform. The noise character under an explosion.
-- **`!buzz`** — a buzzier alteration (all waveforms). With `@6` + `!buzz` and NOIZ
-  off you get brown noise.
-- **`!detune1`** (flange, second detuned voice) / **`!detune2`** (a voice tuned up
-  ~an octave) — thickness for a lead or pad. `!detune` needs an explicit 1 or 2.
+PICO-8 has no working offline export of audio, so `render` and `record` are REAL-TIME recordings of a PICO-8 session (ADR-0009), not an offline export. They work headless (picopilot starts a virtual display when there is none) and require PICO-8. `render` plays a target you pick (`--sfx`, `--pattern`, or the whole song); `record <cart>` captures the cart's own playback. `--seconds` sets the window and the safety backstop follows it. The WAV goes to an isolated temp dir (`--wav-dir`). When `captured` is false, read `noAudioReason` and `pico8LogTail`, then run `picopilot verify`.
 
-The canonical DESIGNED explosion: `!dampen2 !reverb @6` over a descending pitch
-sweep + volume decay, e.g.
-`picopilot sfx from-mml 3 "s6 !dampen2 !reverb @6 o3 v7 g o1 c o0 g v6 e v5 c v4 g v3 c v2 g v1 c"`.
-Strip the two filters and the SAME notes read as a descending zap / rattle: the
-filters are the tool gap the audio dogfood surfaced (they set header byte `e0`).
+`audio analyze <wav>` needs neither PICO-8 nor Python. It skips the first second (as the calibration did; `--skip 0` for an SFX, plus `--kind sfx`) and reports loudness (mean, loudest frame and when), brightness (centroid, share above 2 kHz), dynamic range, a per-half-second loudness `sparkline`, the loop length, and `warnings` with the fix for each.
 
-CAVEAT (finding A.7): the filter byte layout was decoded byte-for-byte on PICO-8
-v0.2.7, but the byte has no non-colliding room for a REVERB level 2 under the
-verified layout, so picopilot exposes `!reverb` as a single on/off switch (DAMPEN
-keeps its 2 levels). A bad level (`!dampen3`, `!noiz2`, `!reverb2`, `!detune`
-without 1/2) is a loud `audio-mml-filter-level-out-of-range` refusal, not a clamp.
+## Refusals (no bytes change)
 
-## `music from-patterns`: structural, NOT a notation
-
-`__music__` holds NO melody: melody lives entirely in the referenced SFX. A song
-is an ORDERED LIST of up-to-4 SFX-channel references per pattern.
-`picopilot music from-patterns "<json>"` writes `__music__` (only `__music__`
-changes; `__sfx__` and every other section stay byte-identical). So author each
-voice as an SFX with `sfx from-mml`, THEN arrange the references here; you never
-write music in a melodic notation. Cart is `--cart` (default `main.p8`); longer
-songs via `--file`.
-
-### The pattern-list JSON
-
-An array of patterns, each
-`{"channels":[c0,c1,c2,c3], "loopStart"?, "loopBack"?, "stop"?}`. Pattern order =
-song order. A channel is an SFX index `0-63`, OR `null` = OFF (silent this
-pattern). **`null` is NOT `sfx 0`**: `null` sets the channel's off bit; `0` is a
-real, playing SFX. Keep them distinct. The 3 flow flags (optional, default
-false): `loopStart`, `loopBack` (jump back to the loop-start pattern at this
-pattern's end), `stop` (music stops after this pattern); they combine. A
-`loopBack` with NO `loopStart` anywhere is allowed but WARNS (PICO-8 falls back
-to pattern 0).
-
-Example: `[{"channels":[0,1,null,3],"loopStart":true},{"channels":[0,1,null,3],"loopBack":true}]`
-is a 2-pattern loop whose channel 2 is silent.
-
-**Pattern length is INHERITED from the SFX, not stored here.** PICO-8 ends a
-pattern when its LEFT-MOST non-looping channel's SFX finishes, so pattern timing
-comes from the referenced SFX (its `speed` + LEN). To change how long a pattern
-plays, change the referenced SFX, not the music.
-
-## The two refusals: loud, never clamped
-
-Both stop you with a structured error + nonzero exit (no bytes change on a
-refusal) so a refusal is ACTIONABLE, not a dead end:
-
-- **`audio-mml-pitch-out-of-range`** (`sfx from-mml`): a note fell below C0 or
-  above D#5 (`0-63`). PICO-8 has no notes outside that range. Fix: TRANSPOSE, pick
-  an octave (`o0`-`o5`) that keeps every note in range, rather than transposing
-  off the keyboard.
-- **`audio-mml-sfx-overflow`** (`sfx from-mml`): more than 32 rows. Fix: SPLIT the
-  melody across multiple SFX slots yourself, then arrange them with
-  `music from-patterns`.
-- **`audio-mml-filter-level-out-of-range`** (`sfx from-mml`): a filter level PICO-8
-  does not have (`!dampen3`, `!reverb2`, `!noiz2`, or `!detune` without a mode).
-  Fix: `!dampen` has levels 1-2 (`!dampen`/`!dampen2`); `!reverb`/`!noiz`/`!buzz`
-  are on/off; `!detune` needs `!detune1` (flange) or `!detune2` (octave).
-
-Related: `music from-patterns` refuses an out-of-range SFX index with
-`audio-music-sfx-out-of-range` (to silence a channel use `null`, not an
-out-of-range number); a malformed JSON payload is `audio-music-parse-error`. And
-`audio render`/`audio record` require PICO-8, so they return a structured
-`pico8-not-found` (remedy `set PICO8_PATH or install PICO-8`) when absent, never
-a crash. The text authoring + transpile steps need neither PICO-8 nor shrinko.
+- `audio-mml-pitch-out-of-range`: a note outside C0..D#5. Pick an octave in range (in a score, the message names song and channel; watch accumulated `<`/`>`).
+- `audio-mml-sfx-overflow`: over 32 rows in `sfx from-mml`. Use `music from-score`.
+- `audio-mml-tie-state-change`: a `v`/`e`/`@`/`~`/`v[...]` between a note and its `^`. Use an envelope or a new note.
+- `audio-mml-filter-level-out-of-range`: `!dampen3`, `!reverb2`, `!noiz2`, `!detune` without 1/2.
+- `audio-score-*`: speed mismatch between channels, `{`/`}` in a score, over 64 patterns, not enough free slots (pass `--slots`).
+- `audio-backstop-too-small`: an explicit `--backstop-ms` that cannot fit the window. Omit it.

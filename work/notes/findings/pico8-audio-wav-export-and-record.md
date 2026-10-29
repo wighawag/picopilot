@@ -28,6 +28,7 @@ The working path is real-time RECORDING of a cooperating cart (the same family a
 - **`extcmd("audio_rec")`**, start recording audio.
 - **`extcmd("audio_end")`**, stop and save the WAV. **`extcmd("audio_end", 1)`** (P1 > 0) saves to the CURRENT folder; P1 omitted/0 saves to the desktop folder. VERIFIED: `audio_end(1)` wrote the WAV into PICO-8's `root_path` (`~/.lexaloffle/pico-8/carts/`), NOT the `-desktop <dir>` directory. (So `-desktop` redirects screenshots/gifs but NOT the `audio_end(1)`-to-current-folder path, a builder must control the WAV location by controlling PICO-8's working folder / root_path, or use `audio_end(0)` + `-desktop`.)
 - **`extcmd("set_filename","name")`** before `audio_rec` names the WAV deterministically (`name.wav`), same as for screenshots.
+- **A recording takes real time, plus PICO-8 startup.** (Added 2026-10-29.) The capture ends only when the harness reaches `audio_end`, i.e. startup (loading the cart, starting a virtual display) PLUS the whole record window. A fixed 30 s kill switch therefore kills every window of about 24 s or more before `audio_end` (observed: `captured:false` with a misleading "never reached audio_end" reason), so any backstop must scale with the window. Verified: 33 s, 54 s, 72 s and 132 s `audio render` windows all captured on PICO-8 0.2.7 under xvfb-run.
 
 ### The load-bearing constraint: recording needs a REAL (or virtual) A/V session, NOT headless `-x`
 

@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 
-import {AudioMmlError, mmlToSfxRow, SFX_ROW_LENGTH} from './sfx.js';
+import {AudioMmlError, mmlToRows, mmlToSfxRow, SFX_ROW_LENGTH} from './sfx.js';
 
 /** The 8-char header of a row (mode/speed/loopstart/loopend). */
 function header(row: string): string {
@@ -166,10 +166,10 @@ describe('mmlToSfxRow: full combined-field probes (finding A.2)', () => {
 });
 
 describe('mmlToSfxRow: durations are TRACKER ROWS (finding B.4)', () => {
-	it('a bare note is one row; cN holds it for N rows via tie rows', () => {
+	it('a bare note is one row; cN holds it for N rows (one held note)', () => {
 		const {row, rows} = mmlToSfxRow('c4');
 		expect(rows).toBe(4);
-		// Same pitch/wave/vol/eff re-emitted in rows 0..3.
+		// Same pitch/wave/vol/eff on rows 0..3 (PICO-8 plays them as one tone).
 		for (let r = 0; r < 4; r++) expect(note(row, r)).toBe('18070');
 		expect(note(row, 4)).toBe('00000'); // row 5 empty
 	});
@@ -192,7 +192,7 @@ describe('mmlToSfxRow: durations are TRACKER ROWS (finding B.4)', () => {
 
 	it('^ (tie) extends the previous note by its length in rows', () => {
 		const {row, rows} = mmlToSfxRow('c ^3');
-		expect(rows).toBe(4); // 1 + 3 tie rows
+		expect(rows).toBe(4); // one note held 1 + 3 rows
 		for (let r = 0; r < 4; r++) expect(note(row, r)).toBe('18070');
 	});
 
@@ -406,5 +406,220 @@ describe('mmlToSfxRow: parse errors (tempo-style inputs rejected loudly)', () =>
 
 	it('whitespace and | bars are cosmetic', () => {
 		expect(mmlToSfxRow('c d e').row).toBe(mmlToSfxRow('c|d|e').row);
+	});
+});
+
+/** Decodes row `r` of an emitted `__sfx__` row into its 4 note fields. */
+function decode(row: string, r: number) {
+	const n = note(row, r);
+	return {
+		pitch: Number.parseInt(n.slice(0, 2), 16),
+		wave: Number.parseInt(n[2]!, 16),
+		vol: Number.parseInt(n[3]!, 16),
+		fx: Number.parseInt(n[4]!, 16),
+	};
+}
+
+/** The decoded [pitch, wave, vol, fx] of rows 0..n-1 (compact for toEqual). */
+function rowsOf(mml: string, n?: number): number[][] {
+	const res = mmlToSfxRow(mml);
+	const count = n ?? res.rows;
+	const out: number[][] = [];
+	for (let r = 0; r < count; r++) {
+		const d = decode(res.row, r);
+		out.push([d.pitch, d.wave, d.vol, d.fx]);
+	}
+	return out;
+}
+
+describe('held notes are ONE shaped note, not a stutter (ADR-0019)', () => {
+	it('fade out (e5) on a held note is a volume ramp with e5 on the LAST row only', () => {
+		// v5 held 4 rows: ceil(5*(1-k/4)) = 5,4,3,2 then the last row fades to 0.
+		expect(rowsOf('@0 v5 e5 c4')).toEqual([
+			[24, 0, 5, 0],
+			[24, 0, 4, 0],
+			[24, 0, 3, 0],
+			[24, 0, 2, 5],
+		]);
+	});
+
+	it('the ramp never reaches a silent row before the note ends', () => {
+		const vols = rowsOf('v2 e5 c8').map((r) => r[2]);
+		expect(vols).toEqual([2, 2, 2, 2, 1, 1, 1, 1]);
+		expect(rowsOf('v2 e5 c8')[7]![3]).toBe(5);
+	});
+
+	it('`l4 e5 c` is one decaying note per held note (the conquest stutter is gone)', () => {
+		const fx = rowsOf('l4 v4 e5 c d').map((r) => r[3]);
+		expect(fx).toEqual([0, 0, 0, 5, 0, 0, 0, 5]);
+	});
+
+	it('fade in (e4) is the attack: first row only, the rest hold at full volume', () => {
+		expect(rowsOf('@3 v6 e4 g3')).toEqual([
+			[31, 3, 6, 4],
+			[31, 3, 6, 0],
+			[31, 3, 6, 0],
+		]);
+	});
+
+	it('drop (e3) is a one-row hit; the rest of the held note is silent', () => {
+		expect(rowsOf('@0 v6 e3 o1 c4')).toEqual([
+			[12, 0, 6, 3],
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+		]);
+	});
+
+	it('vibrato, slide and arpeggio continue on every held row', () => {
+		for (const fx of [1, 2, 6, 7]) {
+			const got = rowsOf(`v3 e${fx} c3`).map((r) => r[3]);
+			expect(got).toEqual([fx, fx, fx]);
+		}
+	});
+
+	it('a one-row note keeps its effect exactly (separate notes still re-trigger)', () => {
+		// Four 1-row plucks: the explicit way to get repeated fades.
+		expect(rowsOf('v4 e5 c c c c').map((r) => r[3])).toEqual([5, 5, 5, 5]);
+		expect(rowsOf('v4 e5 c c c c').map((r) => r[2])).toEqual([4, 4, 4, 4]);
+	});
+
+	it('a ^ tie re-shapes the note as one longer note', () => {
+		// `c2 ^2` == `c4`: the fade lands once, at the end of the whole hold.
+		expect(rowsOf('v5 e5 c2 ^2')).toEqual(rowsOf('v5 e5 c4'));
+		expect(rowsOf('v6 e3 c ^3')).toEqual(rowsOf('v6 e3 c4'));
+	});
+
+	it('a modal change between a note and its tie is refused (audio-mml-tie-state-change)', () => {
+		for (const mml of [
+			'c4 v3 ^4',
+			'c4 e5 ^2',
+			'c2 @3 ^2',
+			'c2 v[32] ^2',
+			'c2 ~1 ^2',
+		]) {
+			let err: unknown;
+			try {
+				mmlToSfxRow(mml);
+			} catch (e) {
+				err = e;
+			}
+			expect(err, mml).toBeInstanceOf(AudioMmlError);
+			expect((err as AudioMmlError).code).toBe('audio-mml-tie-state-change');
+			expect((err as AudioMmlError).message).toContain('v[');
+		}
+	});
+
+	it('octave and default-length changes between a note and its tie are fine', () => {
+		expect(rowsOf('c o4 ^3')).toEqual(rowsOf('c4'));
+		expect(rowsOf('c l3 ^')).toEqual(rowsOf('c4'));
+	});
+
+	it('a tie that would overflow 32 rows is still audio-mml-sfx-overflow', () => {
+		expect(() => mmlToSfxRow('c16 ^17')).toThrow(/32/);
+	});
+});
+
+describe('v[...] per-note volume envelope (ADR-0019)', () => {
+	it('one digit per row; the last value is held', () => {
+		expect(rowsOf('@0 v[3 3 2 2 2 1 1 0] o2 a8')).toEqual([
+			[33, 0, 3, 0],
+			[33, 0, 3, 0],
+			[33, 0, 2, 0],
+			[33, 0, 2, 0],
+			[33, 0, 2, 0],
+			[33, 0, 1, 0],
+			[33, 0, 1, 0],
+			[33, 0, 0, 0],
+		]);
+		expect(rowsOf('v[321] c6').map((r) => r[2])).toEqual([3, 2, 1, 1, 1, 1]);
+	});
+
+	it('spaces are optional and the envelope is modal (every later note uses it)', () => {
+		expect(rowsOf('v[3 2 1] c3 d3')).toEqual(rowsOf('v[321] c3 d3'));
+		expect(rowsOf('v[321] c3 d3').map((r) => r[2])).toEqual([3, 2, 1, 3, 2, 1]);
+	});
+
+	it('a tail after / is the release, placed on the last rows of each note', () => {
+		expect(rowsOf('v[3 2/1 0] c6').map((r) => r[2])).toEqual([
+			3, 2, 2, 2, 1, 0,
+		]);
+		// A note no longer than the tail gets the head only (it must sound).
+		expect(rowsOf('v[3 2/1 0] c2').map((r) => r[2])).toEqual([3, 2]);
+		expect(rowsOf('v[3 2/1 0] c').map((r) => r[2])).toEqual([3]);
+		expect(rowsOf('v[3/1] c3').map((r) => r[2])).toEqual([3, 3, 1]);
+	});
+
+	it('a flat v<N> clears the envelope', () => {
+		expect(rowsOf('v[31] c2 v5 c2').map((r) => r[2])).toEqual([3, 1, 5, 5]);
+	});
+
+	it('with an envelope, e5 still fades only the last row', () => {
+		expect(rowsOf('v[3 2 2 1] e5 c4')).toEqual([
+			[24, 0, 3, 0],
+			[24, 0, 2, 0],
+			[24, 0, 2, 0],
+			[24, 0, 1, 5],
+		]);
+	});
+
+	it('a silent envelope row carries no effect', () => {
+		expect(rowsOf('v[2 0] e2 c2')).toEqual([
+			[24, 0, 2, 2],
+			[24, 0, 0, 0],
+		]);
+	});
+
+	it('malformed envelopes are parse errors', () => {
+		for (const mml of [
+			'v[ c',
+			'v[8] c',
+			'v[] c',
+			'v[/1] c',
+			'v[1/2/3] c',
+			'v[a] c',
+		]) {
+			let err: unknown;
+			try {
+				mmlToSfxRow(mml);
+			} catch (e) {
+				err = e;
+			}
+			expect(err, mml).toBeInstanceOf(AudioMmlError);
+			expect((err as AudioMmlError).code).toBe('audio-mml-parse-error');
+		}
+	});
+});
+
+describe('~N delayed vibrato (ADR-0019)', () => {
+	it('a held note switches to e2 from row N', () => {
+		expect(rowsOf('v3 ~3 c6').map((r) => r[3])).toEqual([0, 0, 0, 2, 2, 2]);
+	});
+
+	it('notes shorter than the delay never get vibrato', () => {
+		expect(rowsOf('v3 ~3 c2 d3').map((r) => r[3])).toEqual([0, 0, 0, 0, 0]);
+	});
+
+	it('it does not override an explicit effect (the fade-out row stays e5)', () => {
+		expect(rowsOf('v3 ~2 e5 c4').map((r) => r[3])).toEqual([0, 0, 2, 5]);
+	});
+
+	it('~0 turns it off; a delay past 31 is a parse error', () => {
+		expect(rowsOf('~2 ~0 c4').map((r) => r[3])).toEqual([0, 0, 0, 0]);
+		expect(() => mmlToSfxRow('~32 c')).toThrow(AudioMmlError);
+		expect(() => mmlToSfxRow('~ c')).toThrow(AudioMmlError);
+	});
+});
+
+describe('mmlToRows: the uncapped row stream (music from-score)', () => {
+	it('has no 32-row cap when asked, and reports whether s<N> was set', () => {
+		const long = mmlToRows('c64', {maxRows: Number.POSITIVE_INFINITY});
+		expect(long.notes).toHaveLength(64);
+		expect(long.speedSet).toBe(false);
+		expect(mmlToRows('s9 c').speedSet).toBe(true);
+	});
+
+	it('caps at 32 by default', () => {
+		expect(() => mmlToRows('c33')).toThrow(AudioMmlError);
 	});
 });

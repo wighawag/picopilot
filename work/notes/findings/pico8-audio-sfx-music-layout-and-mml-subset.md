@@ -1,7 +1,7 @@
 ---
 title: PICO-8 sfx/music layout + the picopilot-MML subset spec (the MML→SFX mapping, closed)
 slug: pico8-audio-sfx-music-layout-and-mml-subset
-source: 'SPIKE (ADR-0005, design-artifact). Part A byte layout VERIFIED EMPIRICALLY against PICO-8 v0.2.7 (AppImage ~/.AppImages/pico-8/pico8) on Linux, 2026-07-05: throwaway carts poked KNOWN bytes into 0x3200 (sfx) / 0x3100 (music) RAM, cstore + save() regenerated the .p8 text sections, and each __sfx__/__music__ hex row was decoded byte-for-byte (single-field probes to isolate every nibble/bit). Cross-checked against the Lexaloffle PICO-8 manual (~/.AppImages/pico-8/pico-8_manual.txt: SFX Editor / Music Editor / Memory sections, and the SFX()/MUSIC() API). Part B (picopilot-MML grammar + mapping) is a picopilot DESIGN DECISION set built ON those verified facts; every choice is stated with rationale. Temp carts were written under ~/.lexaloffle/pico-8/carts and deleted; no product code touched.'
+source: 'SPIKE (ADR-0005, design-artifact). Part A byte layout VERIFIED EMPIRICALLY against PICO-8 v0.2.7 (AppImage ~/.AppImages/pico-8/pico8) on Linux, 2026-07-05: throwaway carts poked KNOWN bytes into 0x3200 (sfx) / 0x3100 (music) RAM, cstore + save() regenerated the .p8 text sections, and each __sfx__/__music__ hex row was decoded byte-for-byte (single-field probes to isolate every nibble/bit). Cross-checked against the Lexaloffle PICO-8 manual (~/.AppImages/pico-8/pico-8_manual.txt: SFX Editor / Music Editor / Memory sections, and the SFX()/MUSIC() API). Part B (picopilot-MML grammar + mapping) is a picopilot DESIGN DECISION set built ON those verified facts; every choice is stated with rationale. Temp carts were written under ~/.lexaloffle/pico-8/carts and deleted; no product code touched. ADDENDUM 2026-10-29 (A.8, A.9, B.4 correction): verified on PICO-8 0.2.7 by `picopilot audio render` of probe SFX + FFT/per-row RMS of the WAVs (numpy), prompted by the conquest dogfood (pico-8-games/conquest).'
 ---
 
 # PICO-8 sfx/music layout + the picopilot-MML subset (spike output, decisions CLOSED)
@@ -162,6 +162,14 @@ The 5 filter switches (NOIZ, BUZZ, DETUNE-1/2, REVERB, DAMPEN; manual "Filters" 
 
 **Emit rule for a transpiler:** OR the chosen filter values into the first header byte, preserving the low mode bit as 0. picopilot emits `mode=0` (pitch mode) already (A.1), so the filter byte = the OR of the selected filter values. Every OTHER header byte + all 32 note rows stay byte-identical.
 
+### A.8 Pitch to frequency (ADDENDUM 2026-10-29, verified)
+
+Pitch 33 (`o2 a` in picopilot-MML) is **440 Hz**: a triangle `o2 a` rendered and FFT'd peaks at 439.5 Hz. So pitch `p` is `440 * 2^((p - 33) / 12)` Hz: PICO-8 "C0" (pitch 0) is 65.4 Hz (scientific C2), picopilot `o2 c` (pitch 24) is middle C (261.6 Hz), `o3` spans 523-988 Hz, `o4` 1047-1976 Hz. The register a melody sits in therefore lands directly in the brightness of the result: a lead at `o4` on square/pulse waves (1.3 to 1.8 kHz fundamentals) is what made the conquest dogfood's first track shrill.
+
+### A.9 Consecutive same-pitch rows are one continuous tone (ADDENDUM 2026-10-29, verified)
+
+PICO-8 does not re-attack a row whose pitch and waveform equal the previous row's: six `@0 v5 c` rows at speed 24 hold a constant RMS (0.203) across every row boundary. A per-row EFFECT, however, applies per row: six one-row `e5` (fade out) notes fall to RMS ~0.02 at the end of every row (six plucks), and `e3`/`e4` re-trigger the same way. The same holds ACROSS a music pattern boundary: a 16-row `@0 v5` note split 8+8 over two SFX in consecutive patterns has the same 10 ms RMS envelope (min 0.199, no dip) as the same note inside one SFX. So a held note must be shaped by stepping VOLUME across its rows and placing a one-row effect once, never by copying the effect onto every row (ADR-0019; the held `e5 c6` decays 0.20, 0.20, 0.16, 0.12, 0.08, 0.004).
+
 ---
 
 ## PART B: the picopilot-MML subset spec (decisions this spike exists to CLOSE)
@@ -190,10 +198,11 @@ octave-up  := ">"                                     # +1 octave
 octave-down:= "<"                                     # -1 octave
 set-wave   := "@" hexdigit                            # waveform 0..7, or 8..F = custom SFX-instr
 set-vol    := "v" digit                               # volume 0..7
+              | "v[" digit* [ "/" digit* ] "]"       # volume ENVELOPE (ADR-0019): one digit per row, last held; after "/" = release
 set-eff    := ( "e" digit ) | fx-shortcut            # effect 0..7 (see B.3)
 set-len    := "l" integer [ dots ]                    # default note length (persists)
 
-fx-shortcut:= "~" | "@@" ... (see B.3, chosen glyphs)
+set-vibdly := "~" integer                             # delayed vibrato (ADR-0019): e2 from a held note's row N; ~0 = off
 ```
 
 State model: `@` (waveform), `v` (volume), `e` (effect), `o`/`l` (octave, default length) are **sticky/modal**: they set the CURRENT value applied to every subsequent note until changed. This is standard MML behaviour and maps naturally to how a tracker fills columns. A bare note emits one PICO-8 note using the current modal state.
@@ -231,7 +240,7 @@ MML has no native concept of PICO-8's effects, so picopilot DEFINES the tokens. 
 **DECISION: durations are expressed in TRACKER ROWS, not musical fractions:**
 
 - A picopilot-MML "length" N means **N tracker rows**, not 1/N of a bar. `c` (or `c1`) = 1 row; `c2` = the note held for 2 rows; `c4` = 4 rows; etc. The whole/half/quarter framing is dropped because PICO-8 has no bar.
-- Holding a note for M rows is emitted as: the note in row 1, then **(M−1) TIE rows**. A tie row repeats the note's pitch/waveform but is realized as either (a) the same note re-struck, or (b) a sustained note. PICO-8 has no true "sustain a previous row" bit, so **DECISION:** a tie/hold re-emits the SAME pitch/waveform/volume in the following rows (audibly a held/repeated note at the SFX speed). If the author wants a smooth sustain they use `e1` (slide) or a low SFX speed. Document this limit; do NOT pretend PICO-8 sustains across rows.
+- Holding a note for M rows emits the same pitch/waveform on M rows. ~~A tie re-strikes the note~~ **CORRECTED 2026-10-29 (A.9):** PICO-8 plays consecutive same-pitch rows as ONE continuous tone, so a hold IS a sustain; what re-triggers is a per-row effect copied onto every row. **DECISION (ADR-0019):** a held note is one shaped note: fade in on its first row, fade out on its last row over a volume ramp, drop on its first row with the rest silent, vibrato/slide/arpeggio on every row; `v[...]` and `~N` shape it explicitly.
 - `.` (dot) multiplies the row count: `c4.` = 6 rows (4 × 1.5). Fractional results round to the nearest whole row (rows are integers); the transpiler warns if rounding changed the value.
 - `r` (rest) = a row with **volume 0** (pitch/waveform irrelevant). `r4` = 4 silent rows.
 - `^` (tie) = extend the previous note by its length in rows (same emission as a multi-row note).
@@ -277,7 +286,7 @@ pattern := {
 ADR-0005 warned the mapping might be nastier than assumed. Verdict: **the byte layout is clean and pleasant (Part A round-trips perfectly); the mismatches are all on the MML side, and they are real but each is closable.** Enumerated:
 
 1. **No per-note duration (biggest).** PICO-8 = fixed rows at one SFX speed. → DECISION B.4: durations are ROW COUNTS emitted as tie rows; no bar/tempo; hard 32-row cap errors. This RESHAPES the mental model the v2 command surface should present: authors write "rows at a speed", not "sheet music". The v2 `sfx from-mml` docs must lead with this.
-2. **No true sustain across rows.** → DECISION B.4: a held note re-emits the same row; smoothness only via slide effect or low speed. Stated as a limit, not hidden.
+2. **Sustain across rows.** → CORRECTED (A.9, ADR-0019): same-pitch rows sustain; a held note is shaped by volume steps, and one-row effects land once per held note.
 3. **No tempo/BPM.** → DECISION B.4: only `speed` (ticks/row). Any BPM sugar is explicitly lossy/optional.
 4. **Pitch ceiling C0..D#5 (0..63).** → DECISION B.2: out-of-range = structured error, no silent clamp.
 5. **Waveform is per-note AND doubles as custom-instrument selector (nibble 0..15).** MML has no timbre-per-note concept. → DECISION B.1/B.3: `@0..@7` = built-in waveforms, `@8..@F` = SFX 0..7 as instruments. This is a first-class, modal token, the whole point of picopilot-MML over ABC.
@@ -294,13 +303,13 @@ None of these forces a redesign; but #1/#2/#3 mean the v2 `sfx from-mml` **comma
 ## Closed decisions (summary)
 
 - **Part A layout: fully verified, byte-for-byte, on PICO-8 v0.2.7.** `__sfx__` = 168-char rows (8 header + 32×5-nibble notes, note = `PP W V E`, waveform nibble 0..15 with 8..15 = custom SFX-instrument). `__music__` = `FF CCCCCCCC` per pattern (flag byte loop-start=1/loop-back=2/stop=4; channel bytes 0..3f active, bit6 = off). Header = mode/speed/loopstart/loopend, with the `loop_end==0` LEN special case. A transpiler should EMIT the text nibbles directly (not poke the scattered RAM bits).
-- **Part B grammar + mapping: CLOSED.** Modal `@`/`v`/`e`/`o`/`l`; pitch = `12*oct+semitone`, C0=0, default `o2`; effects `e0..e7` (+ mnemonics); durations = tracker ROWS via tie rows (no tempo, no cross-row sustain); `s<N>` speed; `{`/`}` loop markers; music = structural 4-channel pattern list. Out-of-range pitch and >32 rows are structured ERRORS, not silent clamps.
+- **Part B grammar + mapping: CLOSED.** Modal `@`/`v`/`e`/`o`/`l`; pitch = `12*oct+semitone`, C0=0, default `o2`; effects `e0..e7` (+ mnemonics); durations = tracker ROWS (no tempo; a held note is one shaped note, ADR-0019); `s<N>` speed; `{`/`}` loop markers; music = structural 4-channel pattern list. Out-of-range pitch and >32 rows are structured ERRORS, not silent clamps.
 - **ADR-0005 confirmations:** ABC-rejection vindicated (waveform/effect/volume are per-note and essential); music-is-structural confirmed; the mapping is NOT nasty on the byte side. The only reshape needed is framing MML authoring as tracker-rows-at-a-speed (mismatches #1/#2/#3).
 
 ## Residual open questions (for the v2 tasks, NOT blockers)
 
 - **Concrete serialization** of the music pattern list (JSON vs TOON vs CLI flags): a `music from-patterns` command-surface decision, not a mapping decision.
-- **Multi-SFX overflow ergonomics:** when a melody exceeds 32 rows, do we error only (current decision) or offer an opt-in "split into SFX N..M + a pattern" helper? Deferred to the `sfx from-mml` task; the safe default (error) is specified here.
+- **Multi-SFX overflow ergonomics:** ANSWERED (ADR-0020): `sfx from-mml` still errors past 32 rows; the separate `music from-score` command splits channels of any length into SFX + patterns and reports the slots it used.
 - **Optional tempo→speed sugar:** whether to offer a lossy BPM convenience. Specified as out-of-scope-by-default; revisit only if authors ask.
 - **Filters (NOIZ/BUZZ/…):** DECODED (A.7) + exposed as `!`-directives in the `audio-mml-sfx-filters` task.
 

@@ -19,7 +19,7 @@ picopilot is a single TypeScript tool (built on the [`incur`](https://www.npmjs.
 | `tokens` / `lint` / `minify` | Count tokens, lint, and minify via [`shrinko8`](https://github.com/thisismypassport/shrinko8). |
 | `verify` | The single static acceptance gate (tokens + lint + integrity; never runs the cart). |
 | `run` / `playtest` | Run a cart headless, capture screenshots, drive input. |
-| `audio` | Author sound and music as text (picopilot-MML). |
+| `audio` | Author sound and music as text (picopilot-MML, whole songs with `music from-score`), record it, and measure it with `audio analyze` (loudness, brightness, repetition) since an agent cannot hear. |
 | `export` / `serve` | Export to a playable HTML bundle and serve it in a browser. |
 | `doctor` | Report what this machine can do (PICO-8, shrinko8, display) and which commands are available. |
 

@@ -73,6 +73,7 @@ const COMMAND_NEEDS: readonly {command: string; needs: readonly Need[]}[] = [
 	{command: 'run --record-audio', needs: ['pico8', 'display']},
 	{command: 'audio record', needs: ['pico8', 'display']},
 	{command: 'audio render', needs: ['pico8', 'display']},
+	{command: 'audio analyze', needs: []},
 ];
 
 /** The PICO-8 version from its install path (e.g. `.../pico-8-0.2.7/...`), if it names one. */

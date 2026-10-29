@@ -3,9 +3,19 @@ import {isAbsolute, resolve} from 'node:path';
 import {Cli, z} from 'incur';
 
 import {
+	AudioMmlError,
+	clearSfxSlot,
+	formatSlots,
+	mergeSfxRow,
 	MusicError,
+	musicSfxRefs,
+	parseSlotList,
 	patternsToMusic,
 	type Pattern,
+	planScore,
+	readScore,
+	readSfxRows,
+	ScoreError,
 	SFX_INDEX_MAX,
 	setMusicSection,
 } from '../engine/audio/index.js';
@@ -270,11 +280,251 @@ function buildMusicGroup(): Cli.Cli {
 		},
 	});
 
+	music.command('from-score', {
+		description:
+			"Write whole SONGS from a score: up to 4 channels per song, each a picopilot-MML string of ANY length (ADR-0020). picopilot cuts every channel into 32-row SFX aligned across channels, makes a channel that is silent for a whole pattern OFF (null), de-duplicates identical SFX, allocates slots, and writes __sfx__ + __music__ (only the slots it writes or clears and __music__ change). Several songs (e.g. title + in-game) are laid out back to back; the report gives each song's start pattern for `music(n)`. Slots: by default only FREE (note-less) slots, filled from 63 down, never touching other content; --slots <from-to> gives the score a range it OWNS (it overwrites and clears that range; recommended when iterating, so re-runs are idempotent).",
+		args: z.object({
+			score: z
+				.string()
+				.optional()
+				.describe(
+					'The score as JSON: {"songs":[{"name":"title","speed":16,"loop":true,"channels":["<mml ch0>", {"mml":"<mml ch1>","filters":"!dampen"}, null, null]}]}. Per song: speed (ticks/row, default the channels\' shared s<N> or 16), patternRows (1-32, default 32), loop (default true; false = stop at the end), loopFrom (pattern within the song the loop returns to, default 0). One song may be given directly as {"channels":[...]}. Omit and pass --file instead.',
+				),
+		}),
+		options: z.object({
+			cart: z
+				.string()
+				.default('main.p8')
+				.describe(
+					'The .p8 cart to write. Defaults to main.p8 in the current folder.',
+				),
+			file: z
+				.string()
+				.optional()
+				.describe(
+					'Read the JSON score from this file instead of the `score` argument.',
+				),
+			slots: z
+				.string()
+				.optional()
+				.describe(
+					'A slot range the score OWNS, e.g. "16-63": any slot in it may be overwritten, and the ones the score does not use are cleared. Without it, only free (note-less) slots are used.',
+				),
+		}),
+		output: z.object({
+			cart: z
+				.string()
+				.describe('The absolute path of the cart that was written.'),
+			songs: z
+				.array(
+					z.object({
+						name: z.string(),
+						startPattern: z
+							.number()
+							.describe('Play this song with music(startPattern).'),
+						endPattern: z.number(),
+						patterns: z.number(),
+						speed: z.number(),
+						patternRows: z.number(),
+						loop: z.boolean(),
+						loopStartPattern: z.number().optional(),
+						seconds: z.number().describe('Length of one pass, in seconds.'),
+					}),
+				)
+				.describe('Each song as laid out in __music__.'),
+			patterns: z.number().describe('Total patterns written to __music__.'),
+			slots: z
+				.array(
+					z.object({
+						slot: z.number(),
+						uses: z.array(z.string()),
+						overwrote: z
+							.boolean()
+							.describe('The slot held different, non-empty content before.'),
+					}),
+				)
+				.describe('Every SFX slot the score wrote, and where it plays.'),
+			slotRange: z
+				.string()
+				.describe('The slots used, compactly (e.g. "40-63").'),
+			cleared: z
+				.array(z.number())
+				.describe(
+					'Owned slots (--slots) the score does not use, cleared to empty.',
+				),
+			warnings: z.array(z.string()).describe('Advisory warnings.'),
+		}),
+		examples: [
+			{
+				description:
+					'Two songs (title + in-game) from a file, owning slots 16-63',
+				args: {},
+				options: {file: 'score.json', slots: '16-63'},
+			},
+			{
+				description: 'One short looping song inline',
+				args: {
+					score:
+						'{"speed":16,"channels":["!dampen @0 v[3 2 2 1/0] o2 l8 a d+ f e","!dampen @0 v[2 2 1] o1 l16 d a-"]}',
+				},
+			},
+		],
+		run({args, options, error, ok}) {
+			let text: string;
+			if (options.file !== undefined) {
+				if (args.score !== undefined) {
+					return error({
+						code: 'ambiguous-input',
+						message:
+							'pass EITHER the score argument OR --file, not both (they are two ways to give the same source).',
+						exitCode: 1,
+					});
+				}
+				const filePath = resolvePath(options.file);
+				if (!existsSync(filePath)) {
+					return error({
+						code: 'score-file-not-found',
+						message: `no score file at ${filePath}`,
+						exitCode: 1,
+					});
+				}
+				text = readFileSync(filePath, 'utf8');
+			} else if (args.score !== undefined) {
+				text = args.score;
+			} else {
+				return error({
+					code: 'no-score',
+					message:
+						'no score: pass it as the `score` argument (JSON) or via --file.',
+					exitCode: 1,
+				});
+			}
+
+			let range: {from: number; to: number} | undefined;
+			if (options.slots !== undefined) {
+				const list = parseSlotList(options.slots);
+				const ok =
+					list !== undefined &&
+					list.length > 0 &&
+					list[list.length - 1]! - list[0]! + 1 === list.length;
+				if (!ok) {
+					return error({
+						code: 'audio-score-bad-slot-range',
+						message: `--slots "${options.slots}" is not one contiguous range within 0-${SFX_INDEX_MAX}, e.g. "16-63".`,
+						exitCode: 1,
+					});
+				}
+				range = {from: list![0]!, to: list![list!.length - 1]!};
+			}
+
+			const cartPath = resolvePath(options.cart);
+			const loaded = loadCart(cartPath);
+			if (!loaded.ok) {
+				return error({code: loaded.code, message: loaded.message, exitCode: 1});
+			}
+
+			// Plan FIRST (pure): a bad score never touches the cart.
+			let plan: ReturnType<typeof planScore>;
+			try {
+				let raw: unknown;
+				try {
+					raw = JSON.parse(text);
+				} catch (e) {
+					throw new ScoreError(
+						'audio-score-parse-error',
+						`score is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
+					);
+				}
+				plan = planScore(
+					readScore(raw),
+					{
+						sfxRows: readSfxRows(loaded.cart),
+						musicRefs: musicSfxRefs(loaded.cart.getSection('music')),
+					},
+					range !== undefined ? {slots: range} : {},
+				);
+			} catch (e) {
+				if (e instanceof ScoreError || e instanceof AudioMmlError) {
+					return error({
+						code: e.code,
+						message: e.message,
+						exitCode: 1,
+						...(e.code === 'audio-score-no-free-slots'
+							? {
+									cta: {
+										description: 'Give the music a slot range it owns:',
+										commands: [
+											{
+												command:
+													'music from-score --file <score.json> --slots 16-63',
+												description:
+													'The score overwrites and clears that range (and nothing else).',
+											},
+										],
+									},
+								}
+							: {}),
+					});
+				}
+				throw e;
+			}
+
+			for (const s of plan.slots) mergeSfxRow(loaded.cart, s.slot, s.row);
+			for (const slot of plan.cleared) clearSfxSlot(loaded.cart, slot);
+			setMusicSection(loaded.cart, plan.musicSection);
+			writeFileSync(cartPath, loaded.cart.serialize());
+
+			const lua = plan.songs
+				.map((s) => `${s.name}: music(${s.startPattern})`)
+				.join(', ');
+			return ok(
+				{
+					cart: cartPath,
+					songs: plan.songs.map((s) => ({
+						name: s.name,
+						startPattern: s.startPattern,
+						endPattern: s.endPattern,
+						patterns: s.patterns,
+						speed: s.speed,
+						patternRows: s.patternRows,
+						loop: s.loop,
+						...(s.loopStartPattern !== undefined
+							? {loopStartPattern: s.loopStartPattern}
+							: {}),
+						seconds: s.seconds,
+					})),
+					patterns: plan.patterns,
+					slots: plan.slots.map((s) => ({
+						slot: s.slot,
+						uses: s.uses,
+						overwrote: s.overwrote,
+					})),
+					slotRange: formatSlots(plan.slots.map((s) => s.slot)),
+					cleared: plan.cleared,
+					warnings: plan.warnings,
+				},
+				{
+					cta: {
+						description: `Written. Play from Lua with ${lua} (add a channel mask, e.g. music(n,0,7), to leave channel 3 for SFX). Then hear and measure it:`,
+						commands: [
+							{
+								command: `audio render --pattern ${plan.songs[0]!.startPattern} --seconds ${Math.ceil(2 * plan.songs[0]!.seconds + 2)} --analyze`,
+								description:
+									'Record the first song twice over (the loop length needs two passes) and get loudness/brightness/repetition numbers.',
+							},
+						],
+					},
+				},
+			);
+		},
+	});
+
 	return music;
 }
 
 /**
- * Registers the `music` command group (`music from-patterns`) on the root CLI.
+ * Registers the `music` command group (`music from-patterns`, `music
+ * from-score`) on the root CLI.
  *
  * `music` is a shrinko-FREE and PICO-8-FREE command group: it assembles a
  * structural pattern list into `__music__` and merges it through the cart model

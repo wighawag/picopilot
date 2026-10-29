@@ -77,3 +77,22 @@ export function setMusicSection(cart: Cart, body: string): void {
 	const normalised = crlf ? body.replace(/\n/g, '\r\n') : body;
 	cart.setSection('music', normalised);
 }
+
+/**
+ * Reads a cart's `__sfx__` section into one entry per slot (0..63); a slot past
+ * the end of the (trimmed) section is `undefined` (empty).
+ */
+export function readSfxRows(cart: Cart): (string | undefined)[] {
+	const body = cart.getSection('sfx');
+	const rows: (string | undefined)[] =
+		body === undefined
+			? []
+			: body.split(/\r?\n/).filter((line) => line.length > 0);
+	while (rows.length < SFX_SLOT_COUNT) rows.push(undefined);
+	return rows.slice(0, SFX_SLOT_COUNT);
+}
+
+/** Clears SFX slot `slot` back to empty (the all-zero row), via {@link mergeSfxRow}. */
+export function clearSfxSlot(cart: Cart, slot: number): void {
+	mergeSfxRow(cart, slot, EMPTY_ROW);
+}
