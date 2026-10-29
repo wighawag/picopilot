@@ -1,5 +1,0 @@
----
-"picopilot": minor
----
-
-New `picopilot audio analyze <wav>` gives a model that cannot hear a way to judge its music: it reports loudness (mean RMS, the loudest moment and when), brightness (spectral centroid, share of energy above 2 kHz), dynamic range, a loudness profile per half second (with a one-line bar chart) and the loop length, plus plain-language warnings (loud, shrill, bright, monotonous, spikes, near-clipping, repetitive) with the fix for each. Thresholds are calibrated on real soundtracks a listener judged. `--against <sfx.wav>` checks that the music sits under the game's SFX. `audio render` and `audio record` take `--analyze` to attach the analysis to the recording (an `--sfx` render is analyzed as a one-shot: no start skip, only the near-silent and near-clipping checks; `audio analyze --kind sfx` does the same). It needs neither PICO-8 nor Python. The `picopilot-audio` skill now teaches the compose, render, analyze loop and the taste rules (register, soft timbres, rests, long varied loops, volume headroom, a channel left for SFX), and the AGENTS.md written by `picopilot init` points at it.
